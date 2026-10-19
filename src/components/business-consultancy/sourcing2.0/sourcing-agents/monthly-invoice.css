@@ -1,0 +1,12 @@
+.responsive-modal {
+  top: 10px;
+  margin: auto;
+  min-width: 140%;
+}
+
+@media (max-width: 550px) {
+  .responsive-modal {
+    min-width: 100% !important;
+    max-width: 100% !important;
+  }
+}

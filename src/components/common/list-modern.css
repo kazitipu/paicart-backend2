@@ -1,0 +1,324 @@
+/* Modern table styling for the Shipment Request list.
+ *
+ * Scoped to .list-modern so the shared react-table styles used by every
+ * other list page are left untouched. */
+
+.list-modern .ReactTable {
+  border: none;
+}
+
+.list-modern .ReactTable .rt-thead.-header {
+  box-shadow: none;
+  border-bottom: 1px solid #e9eef5;
+  background: #f8fafc;
+  border-radius: 10px 10px 0 0;
+}
+
+.list-modern .ReactTable .rt-thead.-header .rt-th {
+  border-right: none;
+  padding: 12px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #64748b;
+  text-align: left;
+  box-shadow: none !important;
+  /* react-table truncates headers to a single line, which turned narrow
+     columns into "BOO…". Let them wrap onto a second line instead - but only
+     at spaces, so "Booking Id" never becomes "Booki ng Id". Uppercasing is
+     deliberately left off: it widens every word and forces more wrapping. */
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.3;
+  word-break: normal;
+  overflow-wrap: normal;
+  hyphens: none;
+}
+
+.list-modern .ReactTable .rt-tbody .rt-tr-group {
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.list-modern .ReactTable .rt-tbody .rt-tr-group:last-child {
+  border-bottom: none;
+}
+
+.list-modern .ReactTable .rt-tbody .rt-td {
+  border-right: none;
+  padding: 14px 12px;
+  font-size: 13px;
+  color: #334155;
+  display: flex;
+  align-items: center;
+}
+
+.list-modern .ReactTable .rt-tbody .rt-tr:hover {
+  background: #f8fafc;
+}
+
+/* react-table pads the last page with empty rows; they should not read as
+   rows the user can interact with. */
+.list-modern .ReactTable .rt-tbody .rt-tr.-padRow {
+  display: none;
+}
+
+.list-modern .ReactTable .-pagination {
+  box-shadow: none;
+  border-top: 1px solid #eef2f7;
+  padding: 12px 4px;
+}
+
+.list-modern .ReactTable .-pagination .-btn {
+  background: #f1f5f9;
+  color: #0f172a;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 13px;
+  border: none;
+}
+
+.list-modern .ReactTable .-pagination .-btn:not([disabled]):hover {
+  background: #FF6A00;
+  color: #fff;
+}
+
+.list-modern .ReactTable .-pagination input,
+.list-modern .ReactTable .-pagination select {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 13px;
+}
+
+/* ---------------------------------------------------------------------
+   Shipment Request modals.
+
+   Scoped to this feature's four modal ids rather than a bare `.modal`
+   selector, because CRA bundles every stylesheet globally and a loose rule
+   would restyle the dialogs on every other page too.
+   --------------------------------------------------------------------- */
+
+#detailInfoModal .modal-content,
+#paymentModal .modal-content,
+#deleteModal .modal-content,
+#chineseOrderModal .modal-content,
+#pickModal .modal-content,
+#trackingModal .modal-content,
+#requestBatchData .modal-content,
+#prCashOutModal .modal-content,
+#request_payment .modal-content,
+#request_popup .modal-content {
+  border: none;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.25);
+}
+
+#detailInfoModal .modal-header,
+#paymentModal .modal-header,
+#deleteModal .modal-header,
+#chineseOrderModal .modal-header,
+#pickModal .modal-header,
+#trackingModal .modal-header,
+#requestBatchData .modal-header,
+#prCashOutModal .modal-header,
+#request_payment .modal-header {
+  border-bottom: none;
+  padding: 16px 20px;
+}
+
+#detailInfoModal .modal-body,
+#paymentModal .modal-body,
+#deleteModal .modal-body,
+#chineseOrderModal .modal-body,
+#pickModal .modal-body,
+#trackingModal .modal-body,
+#requestBatchData .modal-body,
+#prCashOutModal .modal-body,
+#request_payment .modal-body {
+  padding: 20px;
+  background: #fff;
+}
+
+#detailInfoModal .modal-footer,
+#paymentModal .modal-footer,
+#deleteModal .modal-footer,
+#chineseOrderModal .modal-footer,
+#pickModal .modal-footer,
+#trackingModal .modal-footer,
+#requestBatchData .modal-footer,
+#prCashOutModal .modal-footer,
+#request_payment .modal-footer {
+  border-top: 1px solid #eef2f7;
+  padding: 14px 20px;
+}
+
+/* Tables inside the dialogs: same language as the list table. */
+#detailInfoModal .table,
+#paymentModal .table,
+#deleteModal .table,
+#chineseOrderModal .table,
+#pickModal .table,
+#trackingModal .table,
+#requestBatchData .table,
+#request_payment .table {
+  border: 1px solid #eef2f7;
+  border-radius: 10px;
+  overflow: hidden;
+  font-size: 13px;
+}
+
+#detailInfoModal .table td,
+#detailInfoModal .table th,
+#paymentModal .table td,
+#paymentModal .table th,
+#deleteModal .table td,
+#deleteModal .table th {
+  border-color: #f1f5f9;
+  vertical-align: middle;
+  padding: 10px 12px;
+}
+
+#detailInfoModal .table thead td,
+#detailInfoModal .table thead th,
+#paymentModal .table thead td,
+#paymentModal .table thead th {
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* The section captions inside the detail dialog. */
+#detailInfoModal .category-list-shipping,
+#paymentModal .category-list-shipping {
+  font-size: 12.5px;
+  color: #64748b;
+  padding: 3px 0;
+}
+
+/* Form controls */
+#detailInfoModal .form-control,
+#detailInfoModal .custom-select,
+#paymentModal .form-control,
+#paymentModal .custom-select,
+#chineseOrderModal .form-control,
+#chineseOrderModal .custom-select,
+#pickModal .form-control,
+#pickModal .custom-select,
+#prCashOutModal .form-control,
+#prCashOutModal .custom-select,
+#request_popup .form-control,
+#request_popup .custom-select {
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  font-size: 13px;
+  padding: 9px 12px;
+  height: auto;
+  box-shadow: none;
+}
+
+#detailInfoModal .form-control:focus,
+#paymentModal .form-control:focus,
+#request_popup .form-control:focus {
+  border-color: #FF6A00;
+  box-shadow: 0 0 0 3px rgba(255, 106, 0, 0.12);
+}
+
+#detailInfoModal label,
+#paymentModal label,
+#prCashOutModal label,
+#request_popup label {
+  font-size: 11px !important;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #64748b !important;
+  margin-bottom: 4px;
+}
+
+/* Buttons */
+#detailInfoModal .btn,
+#paymentModal .btn,
+#deleteModal .btn,
+#chineseOrderModal .btn,
+#pickModal .btn,
+#trackingModal .btn,
+#requestBatchData .btn,
+#prCashOutModal .btn,
+#request_payment .btn,
+#request_popup .btn {
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 9px 18px;
+}
+
+/* The update dialog painted its whole sheet purple; the content inside is a
+   light form, so only the chrome should carry colour. */
+#request_popup .modal-content {
+  background-color: #fff !important;
+}
+
+/* ---------------------------------------------------------------------
+   1688 Payment Link list.
+
+   Hand-rolled <table> rather than react-table, so it needs its own rules;
+   scoped to .paylink-modern to keep them off every other bootstrap table.
+   --------------------------------------------------------------------- */
+
+.paylink-modern .table {
+  border: 1px solid #e9eef5;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 0;
+}
+
+.paylink-modern .table thead th {
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border: none;
+  border-bottom: 1px solid #e9eef5;
+  padding: 12px 14px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.paylink-modern .table tbody td {
+  border: none;
+  border-bottom: 1px solid #f1f5f9;
+  padding: 14px;
+  font-size: 13px;
+  color: #334155;
+  vertical-align: middle;
+}
+
+/* The zebra striping fought with the row hover and made the receipt
+   thumbnails sit on two different greys. */
+.paylink-modern .table.table-striped tbody tr:nth-of-type(odd),
+.paylink-modern .table.table-striped tbody tr:nth-of-type(even) {
+  background: transparent;
+}
+
+.paylink-modern .table.table-hover tbody tr:hover {
+  background: #f8fafc;
+}
+
+.paylink-modern .table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Payment links are long URLs; keep them from stretching the column. */
+.paylink-modern .table tbody td a {
+  word-break: break-all;
+}
+
+.paylink-modern .table img {
+  border-radius: 8px;
+  border: 1px solid #eef2f7;
+}

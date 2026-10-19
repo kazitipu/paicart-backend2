@@ -1,0 +1,59 @@
+.sticker-container {
+  width: 378px;
+  height: 408px;
+  padding: 16px;
+  font-size: 14px;
+  box-sizing: border-box;
+  background: white;
+}
+
+.logo-container {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+}
+
+.corner-text {
+  font-weight: bold;
+  font-size: 22px;
+}
+
+.barcode-container {
+  text-align: center;
+  border: 1px solid gray;
+  border-left: 0px;
+  border-right: 0px;
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+}
+
+.section-container {
+  margin-top: 10px;
+}
+
+.section-container-1 {
+  font-weight: bold;
+  font-size: 20px;
+  text-align: left;
+}
+
+@media print {
+  body {
+    margin: 0;
+    padding: 0;
+  }
+  .sticker {
+    background: white !important;
+    color: black;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 378px;
+    height: 408px;
+    padding: 16px;
+    font-size: 14px;
+    box-sizing: border-box;
+    background: white;
+  }
+}

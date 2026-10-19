@@ -1,0 +1,10 @@
+.visible-modal {
+  display: block;
+  background-color: rgba(22, 22, 22, 0.3);
+  transition: top 1s, opacity 1s !important;
+}
+
+.visible-modal-content-3 {
+  background-size: cover;
+  box-shadow: rgb(29, 0, 37) 1px 5px 24px 0px;
+}

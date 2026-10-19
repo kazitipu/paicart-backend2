@@ -1,0 +1,297 @@
+/* =========================================================================
+   Payment / refund modals.
+
+   All four dialogs - Make Payment, Payment Request (Order), Refund Request
+   and After-sale Refund - render the same shell under
+   #request_make_payment_popup, so one scoped sheet re-skins every one of
+   them without touching the storefront-era classes they share with other
+   screens. Same approach as common/list-modern.css.
+   ========================================================================= */
+
+#request_make_payment_popup {
+  background: rgba(15, 23, 42, 0.45);
+}
+
+/* ------------------------------- the sheet ------------------------------ */
+
+#request_make_payment_popup .modal-dialog {
+  max-width: min(1180px, 94vw);
+}
+
+#request_make_payment_popup .modal-content {
+  border: none;
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.25);
+  overflow: hidden;
+}
+
+/* makePaymentModal.css widens the sheet with `min-width: 200%` and pulls it
+   back into view with `margin-left: -250px` - a hack around bootstrap's 500px
+   default dialog. The dialog is sized properly above, so that hack now doubles
+   the sheet to ~2360px and throws it off-centre. It also painted the whole
+   sheet purple behind a light form. */
+#request_make_payment_popup .order-details-modal-container {
+  min-width: 100% !important;
+  max-width: 100% !important;
+  margin-left: 0 !important;
+  background-color: #ffffff !important;
+  max-height: min(84vh, 860px);
+  /* `scroll` kept a dead scrollbar gutter on short dialogs. */
+  overflow-y: auto !important;
+  overflow-x: hidden;
+}
+
+#request_make_payment_popup .order-details-container {
+  margin: 0 !important;
+}
+
+/* The dialog painted its whole body a flat grey; the content inside is a
+   light form, so only the chrome should carry colour. */
+#request_make_payment_popup .bg-light-gray,
+#request_make_payment_popup .order-details-main-container {
+  background: #ffffff !important;
+}
+
+#request_make_payment_popup .order-details-main-container {
+  padding: 22px 26px 26px !important;
+}
+
+/* ------------------------------- the header ----------------------------- */
+
+#request_make_payment_popup .order-details-header,
+#request_make_payment_popup .h2-xl {
+  font-size: 19px !important;
+  font-weight: 700 !important;
+  color: #0f172a !important;
+  letter-spacing: 0.1px;
+  border-bottom: 1px solid #eef2f7;
+  padding-bottom: 14px !important;
+  margin-bottom: 18px !important;
+}
+
+#request_make_payment_popup .order-header-1 {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+/* Close control: was a bare icofont glyph with no hit area. */
+#request_make_payment_popup .close {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: #f1f5f9;
+  opacity: 1;
+  text-shadow: none;
+  cursor: pointer;
+  transition:
+    background 0.16s ease,
+    color 0.16s ease;
+}
+
+#request_make_payment_popup .close:hover {
+  background: #fdeaea;
+}
+
+#request_make_payment_popup .close i {
+  font-size: 15px;
+  line-height: 1;
+  color: #475569 !important;
+  font-weight: 600 !important;
+}
+
+#request_make_payment_popup .close:hover i {
+  color: #b91c1c !important;
+}
+
+/* -------------------------------- tables -------------------------------- */
+
+#request_make_payment_popup .table {
+  border: 1px solid #e9eef5;
+  border-radius: 12px;
+  overflow: hidden;
+  font-size: 13px;
+  margin-bottom: 18px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+#request_make_payment_popup .table thead th {
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border: none;
+  border-bottom: 1px solid #e9eef5;
+  padding: 11px 12px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+#request_make_payment_popup .table tbody td,
+#request_make_payment_popup .table tbody th {
+  border: none;
+  border-bottom: 1px solid #f1f5f9;
+  padding: 12px;
+  font-size: 13px;
+  font-weight: 400;
+  color: #334155;
+  vertical-align: middle;
+}
+
+#request_make_payment_popup .table tbody th {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+#request_make_payment_popup .table tbody tr:last-child td,
+#request_make_payment_popup .table tbody tr:last-child th {
+  border-bottom: none;
+}
+
+/* The theme striped these rows two different greys, which put the product
+   thumbnails on inconsistent backgrounds. */
+#request_make_payment_popup .table .table-light,
+#request_make_payment_popup .table tbody tr:nth-of-type(odd),
+#request_make_payment_popup .table tbody tr:nth-of-type(even) {
+  background: transparent;
+}
+
+#request_make_payment_popup .table tbody tr:hover {
+  background: #f8fafc;
+}
+
+#request_make_payment_popup .table img {
+  border-radius: 8px;
+  border: 1px solid #eef2f7;
+  object-fit: cover;
+}
+
+#request_make_payment_popup .result-td {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+/* --------------------------- order/detail blocks ------------------------ */
+
+#request_make_payment_popup .each-order-container-1 {
+  border: 1px solid #e9eef5;
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  background: #fff;
+}
+
+/* ----------------------------- form controls ---------------------------- */
+
+#request_make_payment_popup .form-control,
+#request_make_payment_popup .custom-select,
+#request_make_payment_popup select,
+#request_make_payment_popup input[type="text"],
+#request_make_payment_popup input[type="number"] {
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  font-size: 13px;
+  padding: 9px 12px;
+  height: auto;
+  box-shadow: none;
+  color: #0f172a;
+  background: #fff;
+}
+
+#request_make_payment_popup .form-control:focus,
+#request_make_payment_popup .custom-select:focus,
+#request_make_payment_popup select:focus,
+#request_make_payment_popup input:focus {
+  border-color: #ff6a00;
+  box-shadow: 0 0 0 3px rgba(255, 106, 0, 0.12);
+  outline: none;
+}
+
+#request_make_payment_popup label {
+  font-size: 11px !important;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #64748b !important;
+  margin-bottom: 4px;
+}
+
+/* --------------------------- terms + submit ----------------------------- */
+
+#request_make_payment_popup .agree-terms-condition {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  background: #f8fafc;
+  border: 1px solid #e9eef5;
+  border-radius: 10px;
+  padding: 11px 14px;
+  font-size: 12.5px;
+  color: #475569;
+  margin-top: 6px;
+}
+
+#request_make_payment_popup .terms-condition-checkbox {
+  margin-top: 2px;
+  accent-color: #ff6a00;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+/* The confirm action was a grey bootstrap `btn-secondary`, which read as the
+   least important control in the dialog rather than the only one that
+   commits money. */
+#request_make_payment_popup .procced-to-checkout .btn,
+#request_make_payment_popup .procced-to-checkout .btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #ff6a00 !important;
+  border: none !important;
+  color: #ffffff !important;
+  border-radius: 10px !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.2px;
+  padding: 10px 22px !important;
+  box-shadow: 0 10px 22px -12px rgba(255, 106, 0, 0.9);
+  transition:
+    filter 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+#request_make_payment_popup .procced-to-checkout .btn:hover {
+  filter: brightness(1.05);
+}
+
+#request_make_payment_popup .procced-to-checkout .btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(255, 106, 0, 0.22);
+}
+
+/* Refund dialogs commit an outgoing payment; red is the honest colour. */
+#request_make_payment_popup.is-refund .procced-to-checkout .btn {
+  background: #dc2626 !important;
+  box-shadow: 0 10px 22px -12px rgba(220, 38, 38, 0.9);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #request_make_payment_popup .close,
+  #request_make_payment_popup .procced-to-checkout .btn {
+    transition: none;
+  }
+}

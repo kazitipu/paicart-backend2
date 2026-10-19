@@ -1,0 +1,20 @@
+.visible-modal {
+  display: block;
+  background-color: rgba(22, 22, 22, 0.3);
+  transition: top 1s, opacity 1s !important;
+}
+
+.visible-modal-content-2 {
+  background-size: cover;
+}
+
+@media (min-width: 1000px) {
+  .visible-modal-content-2 {
+    min-width: 800px;
+  }
+
+  .modal-dialog-centered {
+    display: flex;
+    justify-content: center;
+  }
+}

@@ -1,0 +1,61 @@
+.tracking-container {
+  padding: 20px;
+  max-width: 700px;
+  margin: 0 auto;
+}
+
+.timeline {
+  position: relative;
+}
+
+.timeline-item {
+  position: relative;
+  padding-left: 5px;
+  padding-bottom: 30px;
+}
+
+/* Dot */
+.timeline-dot {
+  width: 12px;
+  height: 12px;
+  background-color: white;
+  border: 3px solid #18768f;
+  border-radius: 50%;
+  position: absolute;
+  left: 0;
+  top: 4px;
+  z-index: 2;
+}
+
+/* Line connecting dots */
+.timeline-item::after {
+  content: "";
+  position: absolute;
+  top: 10px;
+  left: 5px;
+  width: 2px;
+  height: calc(100% - 0px);
+  background: #18768f;
+  z-index: 1;
+}
+
+/* Remove line from the last item */
+.timeline-item:last-child::after {
+  display: none;
+}
+
+.timeline-content {
+  margin-left: 20px;
+}
+
+.timeline-date {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 4px;
+}
+
+.timeline-text {
+  font-size: 16px;
+  color: #222;
+  line-height: 1.4;
+}

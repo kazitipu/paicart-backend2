@@ -1,0 +1,158 @@
+/* FullPageLoader — a radar-style "locating" loader.
+   Coral ring sweeps like a tracking scan, with a breathing core underneath —
+   a nod to the booking / order-tracking flows this overlay appears on. */
+
+.fpl-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  background: rgba(20, 16, 18, 0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  z-index: 9999;
+  animation: fpl-fade-in 0.25s ease-out;
+}
+
+.fpl-scan {
+  position: relative;
+  width: 76px;
+  height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fpl-scan__glow {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 128, 132, 0.45) 0%, rgba(255, 128, 132, 0) 70%);
+  animation: fpl-breathe 2.2s ease-in-out infinite;
+}
+
+.fpl-scan__ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  padding: 3px;
+  background: conic-gradient(
+    from 0deg,
+    rgba(255, 128, 132, 0) 0deg,
+    rgba(255, 128, 132, 0.15) 120deg,
+    #ff8084 300deg,
+    #ffffff 360deg
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: fpl-rotate 1.1s linear infinite;
+}
+
+.fpl-scan__ring--track {
+  background: none;
+  border: 3px solid rgba(255, 255, 255, 0.14);
+  animation: none;
+  padding: 0;
+}
+
+.fpl-scan__core {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 12px 2px rgba(255, 128, 132, 0.8);
+  animation: fpl-pulse-core 2.2s ease-in-out infinite;
+}
+
+.fpl-label {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.fpl-label__dot {
+  animation: fpl-dot-fade 1.4s ease-in-out infinite;
+  color: #ff8084;
+  font-weight: 700;
+}
+
+.fpl-label__dot:nth-child(2) {
+  animation-delay: 0.18s;
+}
+.fpl-label__dot:nth-child(3) {
+  animation-delay: 0.36s;
+}
+
+@keyframes fpl-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes fpl-breathe {
+  0%,
+  100% {
+    transform: scale(0.85);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+}
+
+@keyframes fpl-pulse-core {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.25);
+  }
+}
+
+@keyframes fpl-dot-fade {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
+@keyframes fpl-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fpl-scan__ring,
+  .fpl-scan__glow,
+  .fpl-scan__core,
+  .fpl-label__dot,
+  .fpl-overlay {
+    animation: none;
+  }
+  .fpl-scan__ring {
+    border: 3px solid #ff8084;
+    background: none;
+  }
+}

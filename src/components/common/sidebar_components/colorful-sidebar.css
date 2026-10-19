@@ -1,0 +1,393 @@
+/* ==========================================================================
+   Colourful sidebar
+   Every menu row carries its own accent colour via the --menu-color /
+   --menu-color-soft custom properties that sidebar.js sets inline.
+   ========================================================================== */
+
+.page-sidebar .colorful-sidebar {
+  background: #ffffff;
+  padding-bottom: 28px;
+}
+
+/* ------------------------------- user panel ------------------------------ */
+.page-sidebar .colorful-sidebar .sidebar-user {
+  margin: 14px 12px 10px;
+  padding: 22px 14px 18px !important;
+  border-radius: 18px;
+  border: 1px solid rgba(68, 102, 242, 0.09);
+  background: linear-gradient(135deg, #eef2ff 0%, #f6f2ff 48%, #ecfeff 100%);
+  box-shadow: 0 8px 22px rgba(68, 102, 242, 0.09) !important;
+}
+
+.page-sidebar .colorful-sidebar .sidebar-user img {
+  border: 3px solid #ffffff;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.18) !important;
+}
+
+.page-sidebar .colorful-sidebar .sidebar-user h6 {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  margin-bottom: 2px;
+}
+
+.page-sidebar .colorful-sidebar .sidebar-user p {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  color: #8b93ab;
+  margin-bottom: 0;
+}
+
+.page-sidebar .colorful-sidebar .sidebar-user a p {
+  display: inline-block;
+  margin-top: 8px !important;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: rgba(249, 115, 22, 0.12);
+  color: #f97316 !important;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.page-sidebar .colorful-sidebar .sidebar-user a p:hover {
+  background: rgba(249, 115, 22, 0.2);
+}
+
+/* ------------------------------ menu wrapper ----------------------------- */
+.page-sidebar .colorful-sidebar .sidebar-menu {
+  padding: 8px 0 0 !important;
+}
+
+/* --------------------------- top level menu row -------------------------- */
+.page-sidebar .colorful-sidebar .sidebar-menu > li {
+  position: relative;
+}
+
+.page-sidebar .colorful-sidebar .sidebar-menu > li > a.sidebar-header {
+  display: flex !important;
+  align-items: center;
+  position: relative;
+  margin: 3px 12px;
+  padding: 8px 12px !important;
+  border-radius: 13px;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: #3f4459;
+  transition:
+    background 0.22s ease,
+    color 0.22s ease;
+}
+
+.page-sidebar
+  .colorful-sidebar
+  .sidebar-menu
+  > li
+  > a.sidebar-header
+  .menu-label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* icon chip */
+.page-sidebar .colorful-sidebar .sidebar-menu .menu-icon-badge {
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  margin-right: 12px;
+  border-radius: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--menu-color-soft, rgba(68, 102, 242, 0.13));
+  color: var(--menu-color, #4466f2);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.65);
+  transition:
+    background 0.22s ease,
+    color 0.22s ease,
+    transform 0.22s ease,
+    box-shadow 0.22s ease;
+}
+
+.page-sidebar .colorful-sidebar .sidebar-menu .menu-icon-badge svg {
+  width: 18px !important;
+  height: 18px !important;
+  margin: 0 !important;
+  vertical-align: middle !important;
+  stroke: currentColor;
+  stroke-width: 2.1 !important;
+}
+
+/* chevron */
+.page-sidebar
+  .colorful-sidebar
+  .sidebar-menu
+  > li
+  > a.sidebar-header
+  .pull-right {
+  float: none !important;
+  margin: 0 0 0 auto !important;
+  font-size: 14px;
+  color: #b9bfd2;
+  transition: color 0.22s ease;
+}
+
+/* hover + active */
+.page-sidebar .colorful-sidebar .sidebar-menu > li > a.sidebar-header:hover,
+.page-sidebar .colorful-sidebar .sidebar-menu > li > a.sidebar-header.active,
+.page-sidebar .colorful-sidebar .sidebar-menu > li.active > a.sidebar-header {
+  background: var(--menu-color-soft, rgba(68, 102, 242, 0.13));
+  color: var(--menu-color, #4466f2) !important;
+  padding-left: 12px !important;
+}
+
+.page-sidebar
+  .colorful-sidebar
+  .sidebar-menu
+  > li
+  > a.sidebar-header:hover
+  .pull-right,
+.page-sidebar
+  .colorful-sidebar
+  .sidebar-menu
+  > li.active
+  > a.sidebar-header
+  .pull-right {
+  color: var(--menu-color, #4466f2);
+}
+
+.page-sidebar
+  .colorful-sidebar
+  .sidebar-menu
+  > li
+  > a.sidebar-header:hover
+  .menu-icon-badge,
+.page-sidebar
+  .colorful-sidebar
+  .sidebar-menu
+  > li
+  > a.sidebar-header.active
+  .menu-icon-badge,
+.page-sidebar
+  .colorful-sidebar
+  .sidebar-menu
+  > li.active
+  > a.sidebar-header
+  .menu-icon-badge {
+  background: var(--menu-color, #4466f2);
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px var(--menu-color-soft, rgba(68, 102, 242, 0.13));
+}
+
+/* accent bar on the open / current item */
+.page-sidebar
+  .colorful-sidebar
+  .sidebar-menu
+  > li.active
+  > a.sidebar-header::before,
+.page-sidebar
+  .colorful-sidebar
+  .sidebar-menu
+  > li
+  > a.sidebar-header.active::before {
+  content: "";
+  position: absolute;
+  left: -12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 24px;
+  border-radius: 0 4px 4px 0;
+  background: var(--menu-color, #4466f2);
+}
+
+/* -------------------------------- sub menu ------------------------------- */
+.page-sidebar .colorful-sidebar .sidebar-menu li.active > .sidebar-submenu {
+  margin-left: 33px !important;
+  padding-left: 8px;
+  border-left: 1px dashed #e4e8f4;
+}
+
+.page-sidebar .colorful-sidebar .sidebar-menu .sidebar-submenu > li > a {
+  display: flex !important;
+  align-items: center;
+  position: relative;
+  margin: 2px 10px 2px 0;
+  padding: 6px 10px 6px 22px !important;
+  border-radius: 10px;
+  font-size: 13px !important;
+  line-height: 1.55 !important;
+  letter-spacing: 0.2px !important;
+  font-weight: 500;
+  color: #6b7189 !important;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    padding 0.2s ease;
+}
+
+.page-sidebar
+  .colorful-sidebar
+  .sidebar-menu
+  .sidebar-submenu
+  > li
+  > a
+  > .fa-circle {
+  position: absolute;
+  left: 7px;
+  top: 50% !important;
+  transform: translateY(-50%);
+  width: 8px !important;
+  font-size: 8px !important;
+  color: var(--menu-color, #4466f2);
+  transition: font-size 0.2s ease;
+}
+
+.page-sidebar
+  .colorful-sidebar
+  .sidebar-menu
+  .sidebar-submenu
+  > li
+  > a
+  > .pull-right {
+  float: none !important;
+  margin: 0 0 0 auto !important;
+  font-size: 13px;
+  color: #c2c7d8;
+}
+
+.page-sidebar .colorful-sidebar .sidebar-menu .sidebar-submenu > li > a:hover,
+.page-sidebar .colorful-sidebar .sidebar-menu .sidebar-submenu > li > a.active,
+.page-sidebar .colorful-sidebar .sidebar-menu .sidebar-submenu > li.active > a {
+  background: var(--menu-color-soft, rgba(68, 102, 242, 0.15));
+  color: var(--menu-color, #4466f2) !important;
+  padding-left: 24px !important;
+}
+
+.page-sidebar
+  .colorful-sidebar
+  .sidebar-menu
+  .sidebar-submenu
+  > li
+  > a:hover
+  > .fa-circle,
+.page-sidebar
+  .colorful-sidebar
+  .sidebar-menu
+  .sidebar-submenu
+  > li
+  > a.active
+  > .fa-circle,
+.page-sidebar
+  .colorful-sidebar
+  .sidebar-menu
+  .sidebar-submenu
+  > li.active
+  > a
+  > .fa-circle {
+  font-size: 10px !important;
+}
+
+.page-sidebar
+  .colorful-sidebar
+  .sidebar-menu
+  .sidebar-submenu
+  > li
+  > a:hover
+  > .pull-right,
+.page-sidebar
+  .colorful-sidebar
+  .sidebar-menu
+  .sidebar-submenu
+  > li.active
+  > a
+  > .pull-right {
+  color: var(--menu-color, #4466f2);
+}
+
+/* third level */
+.page-sidebar
+  .colorful-sidebar
+  .sidebar-menu
+  .sidebar-submenu
+  .sidebar-submenu
+  > li
+  > a {
+  font-size: 12.5px !important;
+  color: #818aa3 !important;
+}
+
+/* ------------------------------- scrollbar ------------------------------- */
+.page-sidebar .colorful-sidebar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.page-sidebar .colorful-sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.page-sidebar .colorful-sidebar::-webkit-scrollbar-thumb {
+  background: #dfe3ee;
+  border-radius: 999px;
+}
+
+.page-sidebar .colorful-sidebar::-webkit-scrollbar-thumb:hover {
+  background: #c6ccdf;
+}
+
+/* ------------------------- loading placeholder --------------------------- */
+.page-sidebar .colorful-sidebar .sidebar-menu li.pc-menu-skeleton {
+  display: flex;
+  align-items: center;
+  margin: 3px 12px;
+  padding: 8px 12px;
+  border-radius: 13px;
+}
+
+.page-sidebar .colorful-sidebar .pc-menu-skeleton-icon {
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  margin-right: 12px;
+  border-radius: 11px;
+}
+
+.page-sidebar .colorful-sidebar .pc-menu-skeleton-label {
+  height: 9px;
+  border-radius: 999px;
+}
+
+.page-sidebar .colorful-sidebar .pc-menu-skeleton-icon,
+.page-sidebar .colorful-sidebar .pc-menu-skeleton-label,
+.page-sidebar .colorful-sidebar .pc-user-skeleton {
+  display: inline-block;
+  background: linear-gradient(90deg, #eef1f8 25%, #f7f9fd 50%, #eef1f8 75%);
+  background-size: 240% 100%;
+  animation: pc-sidebar-shimmer 1.5s ease-in-out infinite;
+}
+
+.page-sidebar .colorful-sidebar .pc-user-skeleton {
+  display: block;
+  height: 10px;
+  border-radius: 999px;
+  margin: 10px auto 0;
+}
+
+@keyframes pc-sidebar-shimmer {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -120% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-sidebar .colorful-sidebar .pc-menu-skeleton-icon,
+  .page-sidebar .colorful-sidebar .pc-menu-skeleton-label,
+  .page-sidebar .colorful-sidebar .pc-user-skeleton {
+    animation: none;
+  }
+}

@@ -1,0 +1,490 @@
+/* =========================================================================
+   Dashboard.
+   Scoped under .pc-dash - CRA bundles every imported stylesheet into one
+   global sheet, so an unprefixed .card or .table rule here would repaint the
+   whole panel.
+   ========================================================================= */
+
+.pc-dash .pc-dash-caption {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #94a3b8;
+  margin: 0 0 12px;
+}
+
+/* ------------------------------- command bar ---------------------------- */
+
+.pc-dash .pc-dash-commandbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 18px 22px;
+}
+
+.pc-dash .pc-dash-updated {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.pc-dash .pc-dash-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Buttons come from listUi with no disabled styling of their own. */
+.pc-dash .pc-dash-actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.pc-dash .pc-dash-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #fdeaea;
+  color: #b91c1c;
+  border: 1px solid #f8d4d4;
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 22px;
+}
+
+/* ---------------------------------- grids ------------------------------- */
+
+.pc-dash .pc-dash-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(178px, 1fr));
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+.pc-dash .pc-dash-grid-queues {
+  grid-template-columns: repeat(auto-fit, minmax(196px, 1fr));
+}
+
+/* --------------------------------- queues ------------------------------- */
+
+.pc-dash .pc-dash-queue {
+  position: relative;
+  display: block;
+  background: #fff;
+  border: 1px solid #e9eef5;
+  border-radius: 12px;
+  padding: 14px 16px 13px 18px;
+  overflow: hidden;
+  text-decoration: none;
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease,
+    border-color 0.16s ease;
+}
+
+.pc-dash .pc-dash-queue:hover {
+  transform: translateY(-2px);
+  border-color: #dbe3f0;
+  box-shadow: 0 10px 24px -12px rgba(15, 23, 42, 0.28);
+  text-decoration: none;
+}
+
+/* A queue at zero is not a result to celebrate, it is a card to skip past. */
+.pc-dash .pc-dash-queue.is-empty {
+  background: #fbfcfe;
+}
+
+.pc-dash .pc-dash-queue.is-empty .pc-dash-queue-count {
+  color: #cbd5e1;
+}
+
+.pc-dash .pc-dash-queue-stripe {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+}
+
+.pc-dash .pc-dash-queue-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  margin-bottom: 8px;
+}
+
+.pc-dash .pc-dash-queue-count {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.05;
+  color: #0f172a;
+}
+
+.pc-dash .pc-dash-queue-label {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.pc-dash .pc-dash-queue-hint {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+/* ---------------------------------- tiles ------------------------------- */
+
+.pc-dash .pc-dash-tile {
+  position: relative;
+  background: #fff;
+  border: 1px solid #e9eef5;
+  border-radius: 12px;
+  padding: 13px 16px 12px 18px;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.pc-dash .pc-dash-tile-stripe {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+}
+
+.pc-dash .pc-dash-tile-label {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.pc-dash .pc-dash-tile-value {
+  margin: 3px 0 0;
+  font-size: 19px;
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pc-dash .pc-dash-tile-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 5px;
+  min-height: 16px;
+}
+
+/* -------------------------------- skeletons ----------------------------- */
+
+.pc-dash .pc-dash-skeleton {
+  height: 96px;
+  border-radius: 12px;
+  background: linear-gradient(90deg, #eef1f8 25%, #f7f9fd 50%, #eef1f8 75%);
+  background-size: 240% 100%;
+  animation: pc-dash-shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes pc-dash-shimmer {
+  from {
+    background-position: 140% 0;
+  }
+  to {
+    background-position: -40% 0;
+  }
+}
+
+/* --------------------------------- legend ------------------------------- */
+
+.pc-dash .pc-dash-legend {
+  width: 100%;
+  margin-top: 18px;
+}
+
+.pc-dash .pc-dash-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.pc-dash .pc-dash-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.pc-dash .pc-dash-legend-label {
+  font-size: 12px;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pc-dash .pc-dash-legend-value {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+/* --------------------------------- ladder ------------------------------- */
+
+.pc-dash .pc-dash-ladder-key {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.pc-dash .pc-dash-ladder-key span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.pc-dash .pc-dash-ladder-key i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.pc-dash .pc-dash-ladder-row {
+  padding: 7px 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.pc-dash .pc-dash-ladder-row:last-child {
+  border-bottom: none;
+}
+
+.pc-dash .pc-dash-ladder-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.pc-dash .pc-dash-ladder-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.pc-dash .pc-dash-ladder-total {
+  font-size: 12px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.pc-dash .pc-dash-ladder-bars {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.pc-dash .pc-dash-ladder-bar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  text-decoration: none;
+}
+
+.pc-dash a.pc-dash-ladder-bar:hover {
+  text-decoration: none;
+}
+
+.pc-dash a.pc-dash-ladder-bar:hover .pc-meter-fill {
+  filter: brightness(1.08);
+}
+
+.pc-dash .pc-dash-ladder-bar > span {
+  font-size: 11px;
+  font-weight: 700;
+  /* Four digits fit: the "awaiting action" rung counts the whole open
+     backlog, which wrapped onto a second line at 16px. */
+  min-width: 30px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.pc-dash .pc-dash-ladder-bar.is-na {
+  cursor: default;
+}
+
+/* ------------------------------ payment states -------------------------- */
+
+.pc-dash .pc-dash-paystate {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  border-radius: 10px;
+  padding: 9px 13px;
+  margin-bottom: 8px;
+}
+
+/* ------------------------------- store rows ----------------------------- */
+
+.pc-dash .pc-dash-storerow {
+  display: grid;
+  grid-template-columns: 108px 1fr 28px;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+}
+
+.pc-dash .pc-dash-storerow-name {
+  font-size: 12px;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pc-dash .pc-dash-storerow-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: #334155;
+  text-align: right;
+}
+
+/* -------------------------------- customers ----------------------------- */
+
+.pc-dash .pc-dash-customer {
+  padding: 8px 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.pc-dash .pc-dash-customer:last-child {
+  border-bottom: none;
+}
+
+.pc-dash .pc-dash-customer-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-size: 12.5px;
+  color: #334155;
+}
+
+.pc-dash .pc-dash-customer-value {
+  font-weight: 800;
+  color: #0f172a;
+  white-space: nowrap;
+}
+
+.pc-dash .pc-dash-customer-hint {
+  margin: 5px 0 0;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+/* ---------------------------------- table ------------------------------- */
+
+.pc-dash .pc-dash-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.pc-dash .pc-dash-table th {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #94a3b8;
+  padding: 0 8px 9px;
+  border-bottom: 1px solid #eef2f7;
+  white-space: nowrap;
+}
+
+.pc-dash .pc-dash-table td {
+  font-size: 12.5px;
+  color: #334155;
+  padding: 10px 8px;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+}
+
+.pc-dash .pc-dash-table tr:last-child td {
+  border-bottom: none;
+}
+
+.pc-dash .pc-dash-table .ta-r {
+  text-align: right;
+}
+
+.pc-dash .pc-dash-mono {
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: #ff6a00;
+}
+
+.pc-dash .pc-dash-ellipsis {
+  max-width: 190px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ------------------------------- responsive ----------------------------- */
+
+@media (max-width: 991px) {
+  .pc-dash .pc-dash-commandbar {
+    flex-direction: column;
+  }
+  .pc-dash .pc-dash-ladder-bars {
+    gap: 6px;
+  }
+  .pc-dash .pc-dash-storerow {
+    grid-template-columns: 88px 1fr 26px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pc-dash .pc-dash-skeleton {
+    animation: none;
+  }
+  .pc-dash .pc-dash-queue,
+  .pc-dash .pc-meter-fill {
+    transition: none;
+  }
+  .pc-dash .pc-dash-queue:hover {
+    transform: none;
+  }
+}
+
+/* The queue cards count every open item; the list pages they link to open on
+   the last 30 days. Saying so here stops the two reading as a disagreement. */
+.pc-dash .pc-dash-caption-note {
+  margin-left: 10px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  font-size: 11px;
+  color: #cbd5e1;
+}

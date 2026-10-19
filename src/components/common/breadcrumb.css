@@ -1,0 +1,109 @@
+/* =========================================================================
+   Page header / breadcrumb
+   Deliberately outside the theme's .page-header and .breadcrumb classes so
+   none of the old uppercase-title or bootstrap pill styling applies.
+   ========================================================================= */
+
+.pc-crumb {
+  padding: 22px 0 18px;
+  border-bottom: 1px solid #eef2f7;
+  margin-bottom: 22px;
+}
+
+/* ------------------------------- the trail ------------------------------ */
+.pc-crumb__trail {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #94a3b8;
+  margin-bottom: 10px;
+}
+
+.pc-crumb__home {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  background: #f1f5f9;
+  color: #64748b;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.pc-crumb__home:hover {
+  background: #fff1e6;
+  color: #c2410c;
+}
+
+.pc-crumb__caret {
+  flex: 0 0 auto;
+  color: #cbd5e1;
+}
+
+.pc-crumb__parent {
+  text-transform: capitalize;
+  color: #94a3b8;
+}
+
+.pc-crumb__current {
+  color: #475569;
+  text-transform: capitalize;
+}
+
+/* ------------------------------- the title ------------------------------ */
+.pc-crumb__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.pc-crumb__title {
+  position: relative;
+  margin: 0;
+  padding-left: 14px;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  /* The theme uppercases every h3 in .page-header; this title is its own
+     element so it keeps the casing each page actually passes. */
+  text-transform: none;
+  color: #0f172a;
+}
+
+/* Accent rule instead of the old "PAGE TITLE / Paicart Admin panel" stack. */
+.pc-crumb__title::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 22px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ff8a3d 0%, #ff6a00 100%);
+}
+
+.pc-crumb__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 575px) {
+  .pc-crumb {
+    padding: 16px 0 14px;
+    margin-bottom: 16px;
+  }
+
+  .pc-crumb__title {
+    font-size: 19px;
+  }
+}

@@ -1,0 +1,30 @@
+.visible-modal {
+  display: block;
+  background-color: rgba(22, 22, 22, 0.3);
+  transition: top 1s, opacity 1s !important;
+}
+
+.visible-modal-content-3 {
+  background-size: cover;
+  box-shadow: rgb(29, 0, 37) 1px 5px 24px 0px;
+}
+
+.category-list-shipping {
+  padding: 7px;
+  font-weight: bold;
+  padding-top: 0;
+  font-size: 13px;
+}
+
+.below-searchbar-recommendation {
+  display: flex;
+  flex-direction: column;
+  position: absolute;
+  z-index: 5;
+}
+
+.below-searchbar-recommendation li {
+  background-color: white;
+  padding: 8px;
+  cursor: pointer;
+}

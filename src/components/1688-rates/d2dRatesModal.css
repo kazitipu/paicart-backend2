@@ -1,0 +1,11 @@
+.visible-modal {
+  display: block;
+  background-color: rgba(22, 22, 22, 0.3);
+  transition: top 1s, opacity 1s !important;
+}
+
+.visible-modal-content {
+  background-image: url("../../assets/images/dashboard/login-bg.png");
+  background-size: cover;
+  box-shadow: rgb(233, 109, 109) 1px 5px 24px 0px;
+}

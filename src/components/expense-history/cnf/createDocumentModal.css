@@ -1,0 +1,8 @@
+.visible-modal {
+  display: block;
+}
+
+.visible-modal-content-4 {
+  background-size: cover;
+  box-shadow: rgb(0, 1, 41) 1px 5px 10px 0px;
+}
