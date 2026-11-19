@@ -27,7 +27,10 @@ import { Search } from "react-feather";
 import {
   generate1688PaymentLink,
   lastPaymentLinkError,
+  is1688Repickable,
+  PAID_1688_STATUSES,
 } from "../../../actions/get1688Data";
+import { fetch1688Statuses, reorder1688 } from "../../../actions/reorder1688";
 import { getDefaultDateRange } from "../../../constants/dateRange";
 import { Badge, Button, StatTile, StatRow } from "../../common/listUi.jsx";
 import "../../common/list-modern.css";
@@ -239,6 +242,142 @@ export class PartialPayment extends Component {
       alert("Sorry no payment is found with this payment Id");
     }
     console.log("handle submit 2 is getting called!");
+  };
+
+  // ---- Reorder (re-pick) for orders 1688 won't put in a payment link ----
+
+  // Why a not-payable order can't be re-ordered, or null if it can.
+  reorderBlockReason = (order) => {
+    const key = String(order.orderNumber);
+    const done = (this.state.reorders || {})[key];
+    if (done && done.ok) return null;
+    if (done && !done.ok) return `Re-order failed: ${done.error}`;
+    const statuses = this.state.failStatuses;
+    if (!statuses) return null;
+    const status = statuses[key];
+    if (status === null) return "Couldn't check its 1688 status";
+    if (PAID_1688_STATUSES.includes(status))
+      return "Already paid on 1688 — re-ordering would buy it twice";
+    if (status === "waitbuyerpay") return "Still awaiting payment on 1688";
+    if (!is1688Repickable(status)) return `1688 status is "${status}"`;
+    if (!(order.chinaAddress && order.chinaAddress.id))
+      return "No saved China shipping address — pick it manually";
+    return null;
+  };
+
+  failingOrders = () => {
+    const failing = this.state.failingOrderNumbers || [];
+    const orders = (this.state.partial && this.state.partial.orders) || [];
+    return orders.filter((order) =>
+      failing.includes(String(order.orderNumber))
+    );
+  };
+
+  reorderableFailing = () =>
+    this.state.failStatuses
+      ? this.failingOrders().filter(
+          (order) => !this.reorderBlockReason(order)
+        )
+      : [];
+
+  blockedFailing = () =>
+    this.state.failStatuses
+      ? this.failingOrders()
+          .map((order) => ({ order, reason: this.reorderBlockReason(order) }))
+          .filter((entry) => entry.reason)
+      : [];
+
+  reorderFailingOne = async (order) => {
+    const key = String(order.orderNumber);
+    this.setState((state) => ({
+      reorderBusy: { ...(state.reorderBusy || {}), [key]: true },
+    }));
+    const result = await reorder1688(order.orderId);
+    this.setState((state) => {
+      const next = {
+        reorderBusy: { ...(state.reorderBusy || {}), [key]: false },
+        reorders: { ...(state.reorders || {}), [key]: result },
+      };
+      if (result.ok && state.partial) {
+        const updatedPartial =
+          result.payment && result.payment.paymentId == state.partial.paymentId
+            ? { ...state.partial, ...result.payment }
+            : {
+                ...state.partial,
+                orders: state.partial.orders.map((entry) =>
+                  String(entry.orderId) === String(result.order.orderId)
+                    ? {
+                        ...entry,
+                        orderNumber: result.newOrderNumber,
+                        creationTime1688: result.order.creationTime1688,
+                      }
+                    : entry
+                ),
+              };
+        next.partial = updatedPartial;
+        next.failingOrderNumbers = (state.failingOrderNumbers || []).filter(
+          (number) => number !== key
+        );
+        next.data = state.data.map((paymentObj) =>
+          paymentObj.paymentId == updatedPartial.paymentId
+            ? updatedPartial
+            : paymentObj
+        );
+      }
+      return next;
+    });
+    if (result.ok) {
+      toast.success(`Re-ordered: ${key} → ${result.newOrderNumber}`);
+    } else {
+      toast.error(result.error);
+    }
+    return result;
+  };
+
+  reorderAllFailing = async () => {
+    const orders = this.reorderableFailing();
+    this.setState({ reorderingAll: true });
+    for (const order of orders) {
+      await this.reorderFailingOne(order);
+    }
+    this.setState({ reorderingAll: false });
+  };
+
+  render1688StatusBadge = (status) => {
+    let bg = "#e5e7eb";
+    let fg = "#374151";
+    let label = status;
+    if (status === undefined) label = "checking…";
+    else if (status === null) {
+      label = "couldn't check";
+      bg = "#fee2e2";
+      fg = "#b91c1c";
+    } else if (PAID_1688_STATUSES.includes(status)) {
+      label = `paid · ${status}`;
+      bg = "#d1fae5";
+      fg = "#047857";
+    } else if (status === "waitbuyerpay") {
+      bg = "#dbeafe";
+      fg = "#1d4ed8";
+    } else {
+      bg = "#fef3c7";
+      fg = "#b45309";
+    }
+    return (
+      <span
+        style={{
+          background: bg,
+          color: fg,
+          borderRadius: 999,
+          padding: "2px 8px",
+          fontSize: 11.5,
+          fontWeight: 600,
+          whiteSpace: "nowrap",
+        }}
+      >
+        {label}
+      </span>
+    );
   };
 
   render() {
@@ -1212,7 +1351,13 @@ export class PartialPayment extends Component {
                         this.setState({
                           linkGenerationError: lastPaymentLinkError,
                           failingOrderNumbers,
+                          failStatuses: null,
+                          reorders: {},
+                          reorderBusy: {},
                         });
+                        fetch1688Statuses(failingOrderNumbers).then(
+                          (failStatuses) => this.setState({ failStatuses })
+                        );
                         window.$("#request_payment").modal("hide");
                         window.$("#linkFailureModal").modal("show");
                         return;
@@ -1326,6 +1471,65 @@ export class PartialPayment extends Component {
                       )}
                   </div>
                 </div>
+                {(() => {
+                  const reorderable = this.reorderableFailing();
+                  const blocked = this.blockedFailing();
+                  if (reorderable.length > 0 && blocked.length > 0) {
+                    return (
+                      <div
+                        style={{
+                          margin: "0 20px 15px",
+                          padding: "10px 15px",
+                          borderRadius: 5,
+                          background: "#fff7ed",
+                          border: "1px solid #fed7aa",
+                          color: "#7c2d12",
+                          fontSize: 13,
+                        }}
+                      >
+                        <b>
+                          Reorder all is only possible without these{" "}
+                          {blocked.length} order(s):
+                        </b>
+                        <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+                          {blocked.map(({ order, reason }) => (
+                            <li key={order.orderNumber}>
+                              <b>{order.orderNumber}</b> — {reason}
+                            </li>
+                          ))}
+                        </ul>
+                        <div style={{ marginTop: 6 }}>
+                          Reorder all will re-order the other{" "}
+                          {reorderable.length} and skip these — remove them
+                          below if they shouldn't stay in this payment.
+                        </div>
+                      </div>
+                    );
+                  }
+                  if (
+                    reorderable.length === 0 &&
+                    blocked.length > 0 &&
+                    this.failingOrders().length > 0
+                  ) {
+                    return (
+                      <div
+                        style={{
+                          margin: "0 20px 15px",
+                          padding: "10px 15px",
+                          borderRadius: 5,
+                          background: "#fef2f2",
+                          border: "1px solid #fecaca",
+                          color: "#991b1b",
+                          fontSize: 13,
+                        }}
+                      >
+                        None of the not-payable orders can be re-ordered — see
+                        the reason under each one.
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
                 {this.state.partial?.orders &&
                   this.state.partial?.orders.length > 0 && (
                     <div className="row" style={{ padding: "0px 20px" }}>
@@ -1337,6 +1541,7 @@ export class PartialPayment extends Component {
                             <td style={{ fontWeight: "bold" }}>Product</td>
                             <td style={{ fontWeight: "bold" }}>Name</td>
                             <td style={{ fontWeight: "bold" }}>Order Number</td>
+                            <td style={{ fontWeight: "bold" }}>1688 Status</td>
                             <td style={{ fontWeight: "bold" }}>Total</td>
                             <td style={{ fontWeight: "bold" }}>Action</td>
                           </tr>
@@ -1370,6 +1575,45 @@ export class PartialPayment extends Component {
                                 <td>{order.items[0].name.slice(0, 100)}</td>
                                 <td>
                                   {order.orderNumber}
+                                  {(() => {
+                                    const reason =
+                                      isFailing &&
+                                      this.reorderBlockReason(order);
+                                    if (reason)
+                                      return (
+                                        <div
+                                          style={{
+                                            fontSize: 12,
+                                            color: "#6b7280",
+                                            marginTop: 4,
+                                          }}
+                                        >
+                                          Can't re-order: {reason}
+                                        </div>
+                                      );
+                                    const replaced = Object.values(
+                                      this.state.reorders || {}
+                                    ).find(
+                                      (r) =>
+                                        r.ok &&
+                                        String(r.newOrderNumber) ===
+                                          String(order.orderNumber)
+                                    );
+                                    if (replaced)
+                                      return (
+                                        <div
+                                          style={{
+                                            fontSize: 12,
+                                            color: "#047857",
+                                            marginTop: 4,
+                                          }}
+                                        >
+                                          ✓ Re-ordered (was{" "}
+                                          {replaced.oldOrderNumber})
+                                        </div>
+                                      );
+                                    return null;
+                                  })()}
                                   {isFailing && (
                                     <div
                                       style={{
@@ -1388,6 +1632,17 @@ export class PartialPayment extends Component {
                                   )}
                                 </td>
                                 <td>
+                                  {isFailing
+                                    ? this.render1688StatusBadge(
+                                        this.state.failStatuses
+                                          ? this.state.failStatuses[
+                                              String(order.orderNumber)
+                                            ]
+                                          : undefined
+                                      )
+                                    : this.render1688StatusBadge("waitbuyerpay")}
+                                </td>
+                                <td>
                                   <div>
                                     ¥
                                     {order.creationTime1688
@@ -1404,6 +1659,35 @@ export class PartialPayment extends Component {
                                   </div>
                                 </td>
                                 <td>
+                                  {isFailing &&
+                                    this.state.failStatuses &&
+                                    !this.reorderBlockReason(order) && (
+                                      <button
+                                        type="button"
+                                        className="btn btn-sm"
+                                        disabled={
+                                          this.state.reorderingAll ||
+                                          (this.state.reorderBusy || {})[
+                                            String(order.orderNumber)
+                                          ]
+                                        }
+                                        style={{
+                                          background: "#2563eb",
+                                          color: "white",
+                                          marginRight: 6,
+                                          marginBottom: 4,
+                                        }}
+                                        onClick={() =>
+                                          this.reorderFailingOne(order)
+                                        }
+                                      >
+                                        {(this.state.reorderBusy || {})[
+                                          String(order.orderNumber)
+                                        ]
+                                          ? "Re-ordering…"
+                                          : "Reorder"}
+                                      </button>
+                                    )}
                                   {isFailing && (
                                     <button
                                       type="button"
@@ -1477,6 +1761,21 @@ export class PartialPayment extends Component {
                 >
                   Close
                 </button>
+                {this.reorderableFailing().length > 0 && (
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={this.state.reorderingAll}
+                    style={{ backgroundColor: "#2563eb", color: "white" }}
+                    onClick={this.reorderAllFailing}
+                  >
+                    {this.state.reorderingAll
+                      ? "Re-ordering…"
+                      : this.blockedFailing().length > 0
+                      ? `Reorder all except ${this.blockedFailing().length} (${this.reorderableFailing().length})`
+                      : `Reorder all (${this.reorderableFailing().length})`}
+                  </button>
+                )}
                 <button
                   type="button"
                   className="btn"

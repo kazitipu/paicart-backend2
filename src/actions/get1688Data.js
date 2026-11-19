@@ -1492,3 +1492,19 @@ export const create1688Order = async (orderObj, addressId) => {
     return null;
   }
 };
+
+// 1688 statuses meaning the order has been paid (or is past payment).
+export const PAID_1688_STATUSES = [
+  "waitsellersend",
+  "waitlogisticstakein",
+  "waitbuyerreceive",
+  "waitbuyersign",
+  "signinsuccess",
+  "confirm_goods",
+  "success",
+];
+
+// An order can be re-picked (re-ordered on 1688) when it is neither paid nor
+// still awaiting payment: cancelled, terminated, missing, or any other state.
+export const is1688Repickable = (status) =>
+  status !== "waitbuyerpay" && !PAID_1688_STATUSES.includes(status);

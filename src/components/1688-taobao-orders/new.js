@@ -289,6 +289,8 @@ export class New extends Component {
       order.uid,
       order.orderId,
       order.orderNumber,
+      // 1688 numbers the order had before it was re-picked
+      ...(order.previous1688Orders || []).map((previous) => previous.orderNumber),
       order.trackingNo,
       order.shippingMark,
       order.shopName,

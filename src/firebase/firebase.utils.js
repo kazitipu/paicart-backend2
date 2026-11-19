@@ -5291,6 +5291,104 @@ export const deleteProductRequestPayment = async (paymentObj) => {
   }
 };
 
+export const getOrderApiDoc = async (orderId) => {
+  const snapShot = await firestore.doc(`ordersApi/${orderId}`).get();
+  return snapShot.exists ? snapShot.data() : null;
+};
+
+// Records a re-order on 1688: the order gets the new 1688 order number and
+// amounts, the replaced 1688 order is kept in previous1688Orders, and if the
+// order belongs to a payment link its entry there (and the payment's totalRmb)
+// is updated too. Refuses if the order's 1688 number changed meanwhile.
+export const apply1688Reorder = async (
+  orderId,
+  { oldOrderNumber, oldStatus, newOrderNumber, creationTime1688 }
+) => {
+  const orderRef = firestore.doc(`ordersApi/${orderId}`);
+  return firestore.runTransaction(async (t) => {
+    const orderSnap = await t.get(orderRef);
+    if (!orderSnap.exists) throw new Error(`Order ${orderId} not found`);
+    const order = orderSnap.data();
+    if (String(order.orderNumber || "") !== String(oldOrderNumber || "")) {
+      throw new Error(
+        `Order ${orderId} already has a different 1688 order number (${order.orderNumber}). Reload and try again.`
+      );
+    }
+
+    let paymentRef = null;
+    let payment = null;
+    if (order.paymentLinkId) {
+      paymentRef = firestore.doc(`paymentLinks1688/${order.paymentLinkId}`);
+      const paymentSnap = await t.get(paymentRef);
+      payment = paymentSnap.exists ? paymentSnap.data() : null;
+    }
+
+    const now = new Date();
+    const orderUpdate = {
+      orderNumber: newOrderNumber,
+      creationTime1688,
+      repickedDate: now.toLocaleDateString("en-GB"),
+      repickedTime: now.toLocaleTimeString("en-GB"),
+      previous1688Orders: firebase.firestore.FieldValue.arrayUnion({
+        orderNumber: String(oldOrderNumber || ""),
+        status: oldStatus || "unknown",
+        replacedAt: now.toISOString(),
+      }),
+    };
+    // A 1688 status sync moves cancelled orders to "Reject"; a successful
+    // re-order puts it back on the Picked Orders tab.
+    if (order.orderStatus === "Reject") {
+      orderUpdate.orderStatus = "pending";
+      orderUpdate.shipmentStatusScore = 1;
+    }
+    t.update(orderRef, orderUpdate);
+
+    let updatedPayment = null;
+    if (
+      payment &&
+      Array.isArray(payment.orders) &&
+      payment.orders.some((entry) => String(entry.orderId) === String(orderId))
+    ) {
+      const orders = payment.orders.map((entry) =>
+        String(entry.orderId) === String(orderId)
+          ? { ...entry, orderNumber: newOrderNumber, creationTime1688 }
+          : entry
+      );
+      const totalRmb = orders
+        .reduce(
+          (sum, entry) =>
+            sum +
+            parseFloat(
+              (entry.creationTime1688 &&
+                entry.creationTime1688.totalSuccessAmount) ||
+                0
+            ),
+          0
+        )
+        .toFixed(2);
+      t.update(paymentRef, { orders, totalRmb });
+      updatedPayment = { ...payment, orders, totalRmb };
+    }
+
+    return {
+      order: {
+        ...order,
+        orderNumber: newOrderNumber,
+        creationTime1688,
+        ...(orderUpdate.orderStatus
+          ? {
+              orderStatus: orderUpdate.orderStatus,
+              shipmentStatusScore: orderUpdate.shipmentStatusScore,
+            }
+          : {}),
+        repickedDate: orderUpdate.repickedDate,
+        repickedTime: orderUpdate.repickedTime,
+      },
+      payment: updatedPayment,
+    };
+  });
+};
+
 export const getAllBanners = async () => {
   const productsCollectionRef = firestore.collection("banners");
 

@@ -785,6 +785,11 @@ export const getAllEmployeeRedux = () => async (dispatch) => {
   });
 };
 
+// Puts an already-saved order into the store (no Firestore write).
+export const setOrderApiRedux = (order) => ({
+  type: "UPDATE_ORDER_API",
+  payload: order,
+});
 export const updateOrderApiRedux = (order) => async (dispatch) => {
   const orderObj = await updateOrderApi(order);
   dispatch({

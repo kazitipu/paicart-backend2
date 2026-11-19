@@ -22,7 +22,9 @@ import {
   updateOrdersWithPaymentLinkRedux,
   uploadCashInRedux,
   updateOrdersFrom1688Redux,
+  setOrderApiRedux,
 } from "../../actions/index";
+import { reorder1688 } from "../../actions/reorder1688";
 import { Link } from "react-router-dom";
 import man from "../products/physical/plus image.jpeg";
 import { build1688OrderUpdate } from "../../constants/orderStatus1688";
@@ -42,6 +44,7 @@ import {
   get1688TrackingStatus,
   generate1688PaymentLink,
   lastCreateOrderError,
+  is1688Repickable,
 } from "../../actions/get1688Data";
 import { statusDisplay } from "../../constants/statusDisplay";
 import OrderPrintSlip from "../common/orderPrintSlip.jsx";
@@ -336,6 +339,105 @@ export class Datatable extends Component {
     const formatted = `${year}-${month}-${day} ${hour}:${minute}:${second}`;
 
     return formatted;
+  };
+
+  // Repick is offered until the 1688 order is actually paid: whenever its
+  // status is anything other than waitbuyerpay or a paid status, or 1688 no
+  // longer knows the order at all.
+  canRepick = () => {
+    const { productObj, chineseOrderObj, chineseOrderLoading } = this.state;
+    if (!productObj || !productObj.orderNumber || chineseOrderLoading)
+      return false;
+    if (!chineseOrderObj) return true;
+    const status = chineseOrderObj.baseInfo && chineseOrderObj.baseInfo.status;
+    return is1688Repickable(status);
+  };
+
+  renderRepickNotice = () => {
+    const { productObj, chineseOrderObj, repickResult } = this.state;
+    const box = (tone, children) => (
+      <div
+        style={{
+          margin: "0 16px 4px",
+          padding: "10px 14px",
+          borderRadius: 8,
+          fontSize: 13,
+          ...(tone === "error"
+            ? { background: "#fef2f2", border: "1px solid #fecaca", color: "#991b1b" }
+            : tone === "success"
+            ? { background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534" }
+            : { background: "#fff7ed", border: "1px solid #fed7aa", color: "#7c2d12" }),
+        }}
+      >
+        {children}
+      </div>
+    );
+    if (repickResult && repickResult.ok) {
+      return box(
+        "success",
+        <>
+          Re-picked: {repickResult.oldOrderNumber} →{" "}
+          <b>{repickResult.newOrderNumber}</b>
+          {repickResult.payment
+            ? ` · saved to payment ${repickResult.order.paymentLinkId} (now ¥${repickResult.payment.totalRmb}). Regenerate its link on the 1688 Payment Link page — it still points at the old order.`
+            : "."}
+        </>,
+      );
+    }
+    if (repickResult && !repickResult.ok) {
+      return box("error", <>Repick failed: {repickResult.error}</>);
+    }
+    if (!this.canRepick()) return null;
+    const status =
+      chineseOrderObj && chineseOrderObj.baseInfo
+        ? chineseOrderObj.baseInfo.status
+        : null;
+    return box(
+      "warning",
+      <>
+        {status ? (
+          <>
+            1688 order <b>{productObj.orderNumber}</b> is <b>{status}</b>, so
+            it can't be paid.
+          </>
+        ) : (
+          <>
+            1688 order <b>{productObj.orderNumber}</b> wasn't found on 1688.
+          </>
+        )}{" "}
+        Repick places a new 1688 order with the same items and China address
+        and updates the 1688 order number here
+        {productObj.paymentLinkId ? " and in its payment link" : ""}.
+      </>,
+    );
+  };
+
+  repickOrder = async () => {
+    const { productObj } = this.state;
+    if (!productObj) return;
+    this.setState({ repicking: true, repickResult: null });
+    const result = await reorder1688(productObj.orderId);
+    if (!result.ok) {
+      this.setState({ repicking: false, repickResult: result });
+      toast.error(result.error);
+      return;
+    }
+    this.props.setOrderApiRedux(result.order);
+    let chineseOrderObj = null;
+    try {
+      chineseOrderObj = await get1688OrderDetails(result.newOrderNumber);
+    } catch (error) {
+      console.log(error);
+    }
+    this.setState({
+      repicking: false,
+      repickResult: result,
+      productObj: result.order,
+      chineseOrderObj,
+    });
+    toast.success(
+      `Re-picked: ${result.oldOrderNumber} → ${result.newOrderNumber}`,
+    );
   };
 
   render() {
@@ -757,10 +859,20 @@ export class Datatable extends Component {
                   }
                   onClick={async () => {
                     let chineseOrderObj2 = null;
+                    this.setState({
+                      productObj: requestObj,
+                      chineseOrderObj: null,
+                      chineseOrderLoading: !!requestObj.orderNumber,
+                      repickResult: null,
+                    });
                     if (requestObj.orderNumber) {
-                      chineseOrderObj2 = await get1688OrderDetails(
-                        requestObj.orderNumber,
-                      );
+                      try {
+                        chineseOrderObj2 = await get1688OrderDetails(
+                          requestObj.orderNumber,
+                        );
+                      } catch (error) {
+                        console.log(error);
+                      }
                       // Opening the modal is also how a single order gets
                       // resynced: the seller can adjust the cost after the
                       // order is placed, and the 1688 status is what moves the
@@ -777,6 +889,7 @@ export class Datatable extends Component {
                     this.setState({
                       productObj: requestObj,
                       chineseOrderObj: chineseOrderObj2,
+                      chineseOrderLoading: false,
                       pickOrderError: null,
                     });
                   }}
@@ -2615,7 +2728,23 @@ export class Datatable extends Component {
                   </div>
                 </div>
               )}
+              {this.renderRepickNotice()}
               <div className="modal-footer">
+                {this.canRepick() && (
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={this.state.repicking}
+                    style={{
+                      background: "#ff5b00",
+                      color: "white",
+                      opacity: this.state.repicking ? 0.7 : 1,
+                    }}
+                    onClick={this.repickOrder}
+                  >
+                    {this.state.repicking ? "Re-picking…" : "Repick (Reorder)"}
+                  </button>
+                )}
                 <button
                   type="button"
                   className="btn btn-secondary"
@@ -4315,4 +4444,5 @@ export default connect(mapStateToProps, {
   updateOrdersWithPaymentLinkRedux,
   uploadCashInRedux,
   updateOrdersFrom1688Redux,
+  setOrderApiRedux,
 })(Datatable);
