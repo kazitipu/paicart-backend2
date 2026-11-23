@@ -148,8 +148,10 @@ export class PackingList extends Component {
       alert("Call Bangladesh Agent to enter purchasing rmb");
       return;
     }
+    /* only the carton fields — a full copy of `order` could put back a
+       status that was changed since this list loaded */
     await this.props.updateOrderApiRedux({
-      ...order,
+      orderId: order.orderId,
       chineseCarton: this.state.chineseCarton,
       chinseseCartonId: cartons.find(
         (carton) => carton.name == this.state.chineseCarton
@@ -593,7 +595,7 @@ export class PackingList extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}
@@ -706,7 +708,7 @@ export class PackingList extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}
@@ -824,7 +826,7 @@ export class PackingList extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}
@@ -928,7 +930,7 @@ export class PackingList extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}

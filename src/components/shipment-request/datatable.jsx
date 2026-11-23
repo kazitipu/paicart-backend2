@@ -1,3 +1,4 @@
+import DeliveryRequestCell from "../common/deliveryRequestCell.jsx";
 import React, { Component, Fragment } from "react";
 import ReactTable from "react-table";
 import "react-table/react-table.css";
@@ -33,6 +34,31 @@ import "./updateRequestModal.css";
 import { Link } from "react-router-dom";
 import { statusDisplay } from "../../constants/statusDisplay";
 import { joinList, withUnit } from "../../constants/displayList";
+import {
+  BulkActionBar,
+  BulkPaymentModal,
+  BulkStatusModal,
+  selectionColumn,
+  toggleId,
+} from "../common/bulkActions.jsx";
+import { buildStatusPatch } from "../../constants/bulkActions";
+import PaymentModal, {
+  PmBadge,
+  orderStatusTone,
+  paymentStateTone,
+} from "../common/paymentModal.jsx";
+import { getOrderDue } from "../../constants/paymentMath";
+import { notifyCustomer } from "../common/notifyCustomer";
+
+/* Shipments are paid through a different set of channels than orders. */
+const SHIPMENT_PAYMENT_METHODS = [
+  { value: "Bkash", label: "Bkash" },
+  { value: "Nagad", label: "Nagad" },
+  { value: "Rocket", label: "Rocket" },
+  { value: "City Bank", label: "City Bank" },
+  { value: "Brack Bank", label: "Brack Bank" },
+  { value: "Loan", label: "Loan" },
+];
 
 /* The booking's product name — the customer app writes othersProductName */
 const productNameOf = (request) =>
@@ -62,8 +88,76 @@ export class Datatable extends Component {
       minutes: 0,
       seconds: 0,
       hours: 0,
+      bulkSelected: [], // bookingIds ticked for bulk status / payment
+      bulkAction: null, // "status" | "payment"
     };
   }
+
+  /* Bulk actions ---------------------------------------------------------- */
+
+  /* Same choices as the single-request status dropdown. */
+  static BULK_STATUSES = [
+    { value: "Rates Provided", icon: "fa-tag" },
+    { value: "Received in Warehouse", icon: "fa-cubes" },
+    { value: "Ready for fly", icon: "fa-plane" },
+    { value: "Bangladesh customs", icon: "fa-shield" },
+    { value: "Bangladesh warehouse", icon: "fa-check-square-o" },
+    { value: "Paicart warehouse", icon: "fa-home" },
+    { value: "Delivered", icon: "fa-handshake-o" },
+    { value: "Reject", danger: true },
+  ];
+
+  bulkItems = () =>
+    (this.props.myData || [])
+      .filter((request) => this.state.bulkSelected.includes(request.bookingId))
+      .map((request) => ({
+        id: request.bookingId,
+        label: request.bookingId,
+        sub: request.displayName || request.userId || "",
+        status: request.status,
+        due: getOrderDue(request, getShipmentPayable),
+        raw: request,
+      }));
+
+  /* The single-request modal will not save without a customer attached. */
+  validateBulkStatus = (item, status) =>
+    status !== "Reject" && !item.raw.userId ? "No customer attached" : null;
+
+  applyBulkStatus = async (item, status, { notify }) => {
+    const request = item.raw;
+    /* only the changed fields — a full copy of `request` would write back
+       whatever else was stale in it (e.g. an older status) */
+    await this.props.updateShipmentRequestRedux({
+      bookingId: request.bookingId,
+      ...buildStatusPatch(request, status, "status"),
+    });
+    if (notify) {
+      notifyCustomer(request.userId, {
+        title: "Order Status",
+        body: `Your orderId:-${request.bookingId} is ${statusDisplay(status)}.`,
+      });
+    }
+  };
+
+  /* Mirrors handleSubmit: one payment row per request. */
+  applyBulkPayment = async (item, { amount, method, paymentStatus }) => {
+    const request = item.raw;
+    const admin = this.props.currentAdmin.name;
+    await this.props.updateShipmentRequestRedux({
+      bookingId: request.bookingId,
+      paymentStatus,
+      payments: [
+        ...(request.payments || []),
+        {
+          amount,
+          method,
+          paidBy: admin,
+          approvedBy: admin,
+          date: new Date().toLocaleDateString("en-GB"),
+        },
+      ],
+    });
+  };
   componentDidMount = () => {
     this.timerID = setInterval(() => this.tick(), 1000);
   };
@@ -147,15 +241,22 @@ export class Datatable extends Component {
     const { productObj } = this.state;
     console.log(this.state);
     let date = new Date();
+    /* The payment window keeps the copy it was opened with; writing that whole
+       copy back put a booking the admin had moved on straight back to its old
+       status. Write only the payment fields, built on the latest copy. */
+    const fresh =
+      (this.props.myData || []).find(
+        (r) => String(r.bookingId) === String(this.state.productObj.bookingId),
+      ) || this.state.productObj;
     await this.props.updateShipmentRequestRedux({
-      ...this.state.productObj,
+      bookingId: fresh.bookingId,
       paymentStatus:
         this.state.paymentStatus !== "" ? this.state.paymentStatus : "Not Paid",
       payments:
-        this.state.productObj.payments &&
-        this.state.productObj.payments.length > 0
+        fresh.payments &&
+        fresh.payments.length > 0
           ? [
-              ...this.state.productObj.payments,
+              ...fresh.payments,
               {
                 amount: this.state.amount,
                 method: this.state.method,
@@ -182,7 +283,9 @@ export class Datatable extends Component {
       productObj: null,
       method: "",
       amount: "",
+      paymentStatus: "",
     });
+    window.$("#paymentModal").modal("hide");
   };
 
   handleChange = (e) => {
@@ -236,11 +339,13 @@ export class Datatable extends Component {
             ""
           ),
           Cargo: request ? request.cargoCompany : "",
+          /* actual (warehouse) weight once received, else the customer's
+             estimated weight from the booking form, labelled as such */
           Weight:
             request && request.receivedWeight
               ? request.receivedWeight
-              : request.weight
-              ? request.weight
+              : request && parseFloat(request.weight) > 0
+              ? `${request.weight} (est.)`
               : "",
           "Per Kg": request ? request.result && request.result.perKg : "",
           Total: request
@@ -385,39 +490,14 @@ export class Datatable extends Component {
             return (
               <Button
                 variant="subtle"
-                data-toggle="modal"
-                data-target="#detailInfoModal"
-                onClick={async () => {
-                  this.setState({
-                    productObj: requestObj,
-                  });
-                  let orderTracking2 =
-                    await this.props.getOrderTrackingResultRedux(
-                      requestObj.trackingNo
-                    );
-                  console.log(orderTracking2);
-                  if (orderTracking2) {
-                    this.props.updateShipmentRequestRedux({
-                      ...requestObj,
-                      shippingMark: orderTracking2.parcelsArray.map(
-                        (parcel) => `${parcel.shippingMark}`
-                      ),
-                      cargoCompany: "ALG Limited",
-                      lotNo: orderTracking2.lotArray.map((lot) => `${lot}`),
-                      ctnNo: orderTracking2.parcelsArray.map(
-                        (parcel) => `${parcel.parcelId}`
-                      ),
-
-                      cargoRate: orderTracking2.parcelsArray.map(
-                        (parcel) => `${parcel.ratePerKg} tk/kg`
-                      ),
-
-                      shippingChargeCargo: orderTracking2.parcelsArray.map(
-                        (parcel) => `${parcel.finalTotal} Tk`
-                      ),
-                    });
-                  }
-                }}
+                /* Opens the details page, which also syncs every tracking
+                   number's cartons from ALG (one lookup per number). */
+                onClick={() =>
+                  this.props.history.push({
+                    pathname: `${process.env.PUBLIC_URL}/shipment-request/details/${requestObj.bookingId}`,
+                    state: { from: window.location.pathname + window.location.search },
+                  })
+                }
               >
                 Details
               </Button>
@@ -461,6 +541,26 @@ export class Datatable extends Component {
           },
           sortable: false,
         },
+        /* Paicart warehouse: how it will reach the customer — the customer's
+           request from To Receive, or set here by staff */
+        ...(this.props.bookingStatus == "Paicart-warehouse"
+          ? [
+              {
+                Header: <b>Delivery request</b>,
+                id: "deliveryRequest",
+                accessor: () => "deliveryRequest",
+                minWidth: 170,
+                Cell: (row) => {
+                  const record = myData.find((r) => r.bookingId == row.original["Booking Id"]);
+                  return record ? (
+                    <DeliveryRequestCell kind="ship" record={record} admin={this.props.currentAdmin} />
+                  ) : null;
+                },
+                style: { textAlign: "left" },
+                sortable: false,
+              },
+            ]
+          : []),
         {
           Header: <b>Update</b>,
           id: "delete",
@@ -534,6 +634,10 @@ export class Datatable extends Component {
       );
     }
 
+    const { currentAdmin } = this.props;
+    const bulkEnabled = !(currentAdmin && currentAdmin.status == "Partner");
+    const bulkIds = (myData || []).map((r) => r.bookingId);
+
     return (
       <Fragment>
         {newData.length === 0 ? (
@@ -558,10 +662,55 @@ export class Datatable extends Component {
         ) : (
           <ReactTable
             data={newData}
-            columns={columns}
+            columns={
+              bulkEnabled
+                ? [
+                    selectionColumn({
+                      allIds: bulkIds,
+                      selected: this.state.bulkSelected,
+                      getId: (row) => row["Booking Id"],
+                      onToggle: (id) =>
+                        this.setState((st) => ({
+                          bulkSelected: toggleId(st.bulkSelected, id),
+                        })),
+                      onToggleAll: (on) =>
+                        this.setState({ bulkSelected: on ? bulkIds : [] }),
+                    }),
+                    ...columns,
+                  ]
+                : columns
+            }
             defaultPageSize={pageSize}
             className={myClass}
             showPagination={pagination}
+          />
+        )}
+        {bulkEnabled && !this.state.bulkAction && (
+          <BulkActionBar
+            count={this.bulkItems().length}
+            totalDue={this.bulkItems().reduce((sum, i) => sum + i.due, 0)}
+            onStatus={() => this.setState({ bulkAction: "status" })}
+            onPayment={() => this.setState({ bulkAction: "payment" })}
+            onClear={() => this.setState({ bulkSelected: [] })}
+          />
+        )}
+        {this.state.bulkAction === "status" && (
+          <BulkStatusModal
+            items={this.bulkItems()}
+            statusOptions={Datatable.BULK_STATUSES}
+            validate={this.validateBulkStatus}
+            apply={this.applyBulkStatus}
+            notifyAvailable
+            onClose={() => this.setState({ bulkAction: null })}
+            onFinished={() => this.setState({ bulkSelected: [] })}
+          />
+        )}
+        {this.state.bulkAction === "payment" && (
+          <BulkPaymentModal
+            items={this.bulkItems()}
+            apply={this.applyBulkPayment}
+            onClose={() => this.setState({ bulkAction: null })}
+            onFinished={() => this.setState({ bulkSelected: [] })}
           />
         )}
         <ToastContainer />
@@ -582,7 +731,7 @@ export class Datatable extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}
@@ -778,7 +927,11 @@ export class Datatable extends Component {
                             0
                           } Kg`}
                           hint={
-                            productObj.receivedWeight ? "received" : "booked"
+                            productObj.receivedWeight
+                              ? parseFloat(productObj.weight) > 0
+                                ? `actual · est. ${productObj.weight} kg`
+                                : "actual"
+                              : "est. (customer)"
                           }
                         />
                         <StatTile
@@ -859,8 +1012,10 @@ export class Datatable extends Component {
                           : "—"}
                       </td>
                       <td>
-                        {productObj && (productObj.receivedWeight || productObj.weight)
-                          ? `${productObj.receivedWeight || productObj.weight} Kg`
+                        {productObj && productObj.receivedWeight
+                          ? `${productObj.receivedWeight} Kg`
+                          : productObj && parseFloat(productObj.weight) > 0
+                          ? `${productObj.weight} Kg (est.)`
                           : "—"}
                       </td>
                       <td>
@@ -1247,6 +1402,14 @@ export class Datatable extends Component {
                       </span>
                     </div>
                     <div className="category-list-shipping">
+                      Est. weight (customer):{" "}
+                      <span style={{ fontWeight: "lighter" }}>
+                        {productObj && parseFloat(productObj.weight) > 0
+                          ? `${productObj.weight} Kg`
+                          : "—"}
+                      </span>
+                    </div>
+                    <div className="category-list-shipping">
                       Received weight:{" "}
                       <span style={{ fontWeight: "lighter" }}>
                         {productObj &&
@@ -1465,353 +1628,94 @@ export class Datatable extends Component {
             </div>
           </div>
         </div>
-        <div
-          className="modal fade"
-          id="paymentModal"
-          tabIndex="-1"
-          role="dialog"
-          aria-labelledby="exampleModalLabel"
-          aria-hidden="true"
-        >
-          <div
-            className="modal-dialog"
-            role="document"
-            style={{ margin: "auto", minWidth: "60%" }}
-          >
-            <div className="modal-content" style={{ top: 10, margin: "auto" }}>
-              <div
-                className="modal-header"
-                style={{
-                  backgroundColor: "rgb(0, 37, 76)",
-                  paddingTop: 20,
-                  paddingBottom: 20,
-                }}
-              >
-                <div
-                  className="modal-title"
-                  style={{
-                    fontWeight: "bold",
-                    fontSize: 17,
-                    color: "white",
-                  }}
-                  id="exampleModalLabel"
-                >
-                  Booking Id: {productObj && productObj.bookingId}
-                  {productObj && (
-                    <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-                      <ModeBadge mode={getShipmentMode(productObj)} />
-                      <Badge
-                        tone={
-                          PAYMENT_STATE_TONES[
-                            getDisplayPaymentState(
-                              productObj,
-                              getShipmentPayable
-                            )
-                          ] || "gray"
-                        }
-                      >
-                        {getDisplayPaymentState(productObj, getShipmentPayable)}
-                      </Badge>
-                    </div>
+        <PaymentModal
+          idLabel="Booking Id"
+          idValue={productObj && productObj.bookingId}
+          badges={
+            productObj && (
+              <>
+                <ModeBadge mode={getShipmentMode(productObj)} />
+                <PmBadge
+                  tone={paymentStateTone(
+                    getDisplayPaymentState(productObj, getShipmentPayable)
                   )}
-                </div>
-                <button
-                  type="button"
-                  className="close"
-                  data-dismiss="modal"
-                  aria-label="Close"
-                  id="personal-info-close"
                 >
-                  <span aria-hidden="true" style={{ color: "white" }}>
-                    &times;
-                  </span>
-                </button>
-              </div>
-              <div className="modal-body">
-                {productObj &&
-                  (() => {
-                    const bill = getShipmentPayable(productObj);
-                    const paid = this.getTotal(productObj.payments);
-                    const due = Math.max(bill - paid, 0);
-                    return (
-                      <StatRow>
-                        <StatTile
-                          tone="gray"
-                          label="Total Bill"
-                          value={`৳${bill.toLocaleString()}`}
-                          hint={
-                            productObj.shippingChargeCustomer
-                              ? "actual"
-                              : "estimate"
-                          }
-                        />
-                        <StatTile
-                          tone="green"
-                          label="Paid"
-                          value={`৳${paid.toLocaleString()}`}
-                          hint={`${
-                            (productObj.payments || []).length
-                          } payment(s)`}
-                        />
-                        <StatTile
-                          tone={due > 0 ? "orange" : "green"}
-                          label={due > 0 ? "Due" : "Settled"}
-                          value={`৳${due.toLocaleString()}`}
-                        />
-                      </StatRow>
-                    );
-                  })()}
-                <div className="row">
-                  <div
-                    className="col"
-                    style={{
-                      fontWeight: "bold",
-                      borderBottom: "1px solid gainsboro",
-                      paddingBottom: 5,
-                    }}
-                  >
-                    Make New Payment
-                  </div>
-                </div>
-                <div className="row" style={{ marginTop: 10 }}>
-                  <div className="col">
-                    <div style={{ fontSize: 12 }}>
-                      Booking weight:
-                      <span style={{ fontWeight: "bold" }}>
-                        {productObj && productObj.weight}Kg
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 12 }}>
-                      Booking rate:
-                      <span style={{ fontWeight: "bold" }}>
-                        {productObj && productObj.result
-                          ? productObj.result.perKg
-                          : "N/A"}
-                        Tk/kg
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 12 }}>
-                      Booking Total shipping rate:
-                      <span style={{ fontWeight: "bold" }}>
-                        {productObj && productObj.result
-                          ? productObj.result.result
-                          : "N/A"}
-                        Tk
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <div className="row" style={{ marginTop: 10 }}>
-                  <div className="col">
-                    <div style={{ fontSize: 12 }}>
-                      Received weight:
-                      <span style={{ fontWeight: "bold" }}>
-                        {productObj && productObj.receivedWeight}Kg
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 12 }}>
-                      Actual rate:
-                      <span style={{ fontWeight: "bold" }}>
-                        {productObj && productObj.customerRate}Tk/kg
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 12 }}>
-                      Actual Total shipping rate:
-                      <span style={{ fontWeight: "bold" }}>
-                        {productObj && productObj.shippingChargeCustomer}Tk
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 12 }}>
-                      Total Paid:
-                      <span style={{ fontWeight: "bold" }}>
-                        {productObj && this.getTotal(productObj.payments)}Tk
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <div className="row">
-                  <div className="col">
-                    <form
-                      onSubmit={this.handleSubmit}
-                      className="rounded-field mt-2"
-                    >
-                      <div className="form-row mb-2">
-                        <div className="col">
-                          <label
-                            style={{
-                              marginBottom: 0,
-                              fontSize: 13,
-                              fontWeight: "bold",
-                            }}
-                          >
-                            Payment Method
-                          </label>
-
-                          <select
-                            title=""
-                            name="method"
-                            className="custom-select"
-                            aria-required="true"
-                            aria-invalid="false"
-                            onChange={this.handleChange}
-                            style={{ fontSize: ".8rem" }}
-                            value={this.state.method}
-                            required
-                          >
-                            <option value="">Select Method</option>
-                            <option value="Bkash">Bkash</option>
-                            <option value="Nagad">Nagad</option>
-                            <option value="Rocket">Rocket</option>
-                            <option value="City Bank">City Bank</option>
-                            <option value="Brack Bank">Brack Bank</option>
-                            <option value="Loan">Loan</option>
-                          </select>
-                        </div>
-                        <div className="col">
-                          <label
-                            style={{
-                              marginBottom: 0,
-                              fontSize: 13,
-                              fontWeight: "bold",
-                            }}
-                          >
-                            Paid amount
-                          </label>
-
-                          <input
-                            type="number"
-                            name="amount"
-                            className="form-control"
-                            placeholder="Enter amount"
-                            style={{ fontSize: "1rem" }}
-                            onChange={this.handleChange}
-                            value={this.state.amount}
-                            required
-                          />
-                        </div>
-                        <div className="col">
-                          <label
-                            style={{
-                              marginBottom: 0,
-                              fontSize: 13,
-                              fontWeight: "bold",
-                            }}
-                          >
-                            Payment Status
-                          </label>
-
-                          <select
-                            title=""
-                            name="paymentStatus"
-                            className="custom-select"
-                            aria-required="true"
-                            aria-invalid="false"
-                            onChange={this.handleChange}
-                            style={{ fontSize: ".8rem" }}
-                            value={this.state.paymentStatus}
-                            required
-                          >
-                            <option value="">Select Payment Status</option>
-                            <option value="Partially Paid">
-                              Partially Paid
-                            </option>
-                            <option value="Paid">Full Paid</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      <div className="form-row">
-                        <div
-                          className="col pt-3"
-                          style={{
-                            display: "flex",
-                            justifyContent: "flex-end",
-                          }}
-                        >
-                          <button
-                            type="submit"
-                            className="btn"
-                            style={{
-                              background: "rgb(0, 37, 76)",
-                              color: "white",
-                            }}
-                          >
-                            Update
-                            <i className="icofont-rounded-right"></i>
-                          </button>
-                        </div>
-                      </div>
-                    </form>
-                  </div>
-                </div>
-                <div className="row">
-                  {this.state.productObj &&
-                    this.state.productObj.payments &&
-                    this.state.productObj.payments.length > 0 && (
-                      <div className="col">
-                        <div
-                          className="row"
-                          style={{
-                            height: 1,
-                            width: "100%",
-                            background: "gainsboro",
-                            marginTop: 20,
-                            marginBottom: 20,
-                            marginRight: 0,
-                            marginLeft: 0,
-                          }}
-                        ></div>
-                        <div
-                          style={{
-                            paddingLeft: 0,
-                            color: "#18768f",
-                            fontWeight: "bold",
-                          }}
-                        >
-                          Previous Payments
-                        </div>
-                        <table className="table table-bordered table-striped table-hover">
-                          <thead
-                            style={{ background: "#18768f", color: "white" }}
-                          >
-                            <tr>
-                              <td style={{ fontWeight: "bold" }}>Date</td>
-                              <td style={{ fontWeight: "bold" }}>Method</td>
-                              <td style={{ fontWeight: "bold" }}>Amount</td>
-                              <td style={{ fontWeight: "bold" }}>Paid by</td>
-                              <td style={{ fontWeight: "bold" }}>
-                                Approved by
-                              </td>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {this.state.productObj.payments.map((payment) => (
-                              <tr>
-                                <td>{payment.date}</td>
-                                <td>{payment.method}</td>
-                                <td>{payment.amount}Tk</td>
-                                <td>{payment.paidBy}</td>
-                                <td>{payment.approvedBy}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  data-dismiss="modal"
+                  {getDisplayPaymentState(productObj, getShipmentPayable)}
+                </PmBadge>
+                <PmBadge
+                  tone={
+                    productObj.status === "Reject"
+                      ? "red"
+                      : orderStatusTone(productObj.status)
+                  }
                 >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+                  {statusDisplay(productObj.status) || "Pending"}
+                </PmBadge>
+              </>
+            )
+          }
+          summary={
+            productObj
+              ? {
+                  total: getShipmentPayable(productObj),
+                  paid: this.getTotal(productObj.payments),
+                  totalHint: productObj.shippingChargeCustomer
+                    ? "actual shipping charge"
+                    : "booking estimate",
+                }
+              : { total: 0, paid: 0 }
+          }
+          breakdown={
+            productObj
+              ? [
+                  { section: "Booking (estimate)" },
+                  {
+                    label: "Est. weight (customer)",
+                    text: `${productObj.weight || 0} kg`,
+                  },
+                  {
+                    label: "Booking rate",
+                    text: productObj.result
+                      ? `৳${productObj.result.perKg}/kg`
+                      : "N/A",
+                  },
+                  {
+                    label: "Booking total shipping",
+                    text:
+                      productObj.result && Number.isFinite(parseFloat(productObj.result.result))
+                        ? `৳${Math.round(parseFloat(productObj.result.result)).toLocaleString("en-IN")}`
+                        : "—",
+                    strong: true,
+                  },
+                  { section: "Actual" },
+                  {
+                    label: "Received weight",
+                    text: `${productObj.receivedWeight || 0} kg`,
+                  },
+                  {
+                    label: "Actual rate",
+                    text: `৳${productObj.customerRate || 0}/kg`,
+                  },
+                  {
+                    label: "Actual total shipping",
+                    value: productObj.shippingChargeCustomer,
+                    strong: true,
+                  },
+                ]
+              : []
+          }
+          methods={SHIPMENT_PAYMENT_METHODS}
+          form={{
+            method: this.state.method,
+            amount: this.state.amount,
+            paymentStatus: this.state.paymentStatus,
+          }}
+          onChange={this.handleChange}
+          onSubmit={this.handleSubmit}
+          payments={productObj && productObj.payments}
+          historyPerson={(p) => p.approvedBy || p.receivedBy}
+          historyPersonLabel="Approved by"
+        />
         <div
           className="modal fade"
           id="deleteModal"
@@ -1829,7 +1733,7 @@ export class Datatable extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}
@@ -1902,6 +1806,7 @@ export class Datatable extends Component {
                       value={`${
                         productObj.receivedWeight || productObj.weight || 0
                       } Kg`}
+                      hint={productObj.receivedWeight ? "actual" : "est. (customer)"}
                     />
                     <StatTile
                       tone="green"

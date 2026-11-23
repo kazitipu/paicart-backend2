@@ -23,7 +23,7 @@ import { Badge, Button, StatRow, StatTile } from "../common/listUi.jsx";
    charge - so each type brings its own payable formula. */
 const TYPES = {
   order: {
-    label: "1688 Order",
+    label: "Website Order",
     tone: "blue",
     expense: "1688 Orders",
     payable: getOrderPayable,

@@ -217,7 +217,7 @@ export class Coupons extends Component {
                         style={{
                           fontSize: "130%",
                           marginRight: "5px",
-                          color: "#00254c",
+                          color: "#e05900",
                         }}
                       ></i>
                       Coupons <br />
@@ -283,7 +283,7 @@ export class Coupons extends Component {
                           data-toggle="modal"
                           data-target="#personalInfoModal"
                           style={{
-                            backgroundColor: "rgb(0, 37, 76)",
+                            backgroundColor: "#ff6a00",
                             border: "none",
                             color: "white",
                             fontSize: 11,
@@ -397,7 +397,7 @@ export class Coupons extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                               minWidth: "150px",
                               maxWidth: "150px",
                             }}
@@ -464,7 +464,7 @@ export class Coupons extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                               maxWidth: "150px",
                               minWidth: "150px",
                             }}
@@ -476,7 +476,7 @@ export class Coupons extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                               maxWidth: "150px",
                               minWidth: "150px",
                             }}
@@ -489,7 +489,7 @@ export class Coupons extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Discount Amount
@@ -500,7 +500,7 @@ export class Coupons extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Expiration Date
@@ -510,7 +510,7 @@ export class Coupons extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Usage Limit
@@ -520,7 +520,7 @@ export class Coupons extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Minimum Order Amount
@@ -530,7 +530,7 @@ export class Coupons extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Maximum Discount Amount
@@ -540,7 +540,7 @@ export class Coupons extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Action
@@ -675,7 +675,7 @@ export class Coupons extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}
@@ -918,7 +918,7 @@ export class Coupons extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}
@@ -1021,7 +1021,7 @@ export class Coupons extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}

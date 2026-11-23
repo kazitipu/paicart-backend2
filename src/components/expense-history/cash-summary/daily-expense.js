@@ -17,6 +17,7 @@ import {
 import { Link } from "react-router-dom";
 import { connect } from "react-redux";
 import { Tabs, TabList, TabPanel, Tab } from "react-tabs";
+import { showLabel } from "../../../constants/displayLabels";
 
 export class DailyExpense extends Component {
   constructor(props) {
@@ -197,7 +198,7 @@ export class DailyExpense extends Component {
                       >
                         <option value="">Filter by category </option>
                         <option value="">All </option>
-                        <option value="1688 Order">1688 Order</option>
+                        <option value="1688 Order">Website Order</option>
                         <option value="Product Request">Product Request</option>
                         <option value="Ship For Me">Ship For Me</option>
                         <option value="LOAN">LOAN</option>
@@ -219,7 +220,7 @@ export class DailyExpense extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             #
@@ -229,7 +230,7 @@ export class DailyExpense extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Cateogry
@@ -239,7 +240,7 @@ export class DailyExpense extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Sub Category
@@ -249,7 +250,7 @@ export class DailyExpense extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Note
@@ -259,7 +260,7 @@ export class DailyExpense extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Amount
@@ -271,8 +272,8 @@ export class DailyExpense extends Component {
                           {renderableExpense.map((expense, index) => (
                             <tr key={index}>
                               <th scope="row">{index + 1}</th>
-                              <td>{expense.category}</td>
-                              <td>{expense.subCategory}</td>
+                              <td>{showLabel(expense.category)}</td>
+                              <td>{showLabel(expense.subCategory)}</td>
                               <td>{expense.note}</td>
                               <td>{expense.amount}Tk</td>
                             </tr>
@@ -290,8 +291,8 @@ export class DailyExpense extends Component {
                           {renderableCashIn.map((expense, index) => (
                             <tr key={index}>
                               <th scope="row">{index + 1}</th>
-                              <td>{expense.category}</td>
-                              <td>{expense.subCategory}</td>
+                              <td>{showLabel(expense.category)}</td>
+                              <td>{showLabel(expense.subCategory)}</td>
                               <td>{expense.note}</td>
                               <td>{expense.amount}Tk</td>
                             </tr>

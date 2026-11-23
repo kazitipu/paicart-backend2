@@ -180,7 +180,7 @@ export class Banners extends Component {
                       style={{
                         fontSize: "130%",
                         marginRight: "5px",
-                        color: "#00254c",
+                        color: "#e05900",
                       }}
                     ></i>
                     Banners
@@ -246,7 +246,7 @@ export class Banners extends Component {
                         data-toggle="modal"
                         data-target="#personalInfoModal"
                         style={{
-                          backgroundColor: "rgb(0, 37, 76)",
+                          backgroundColor: "#ff6a00",
                           border: "none",
                           color: "white",
                           fontSize: 11,
@@ -291,7 +291,7 @@ export class Banners extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                               minWidth: "150px",
                               maxWidth: "150px",
                             }}
@@ -304,7 +304,7 @@ export class Banners extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                               maxWidth: "150px",
                               minWidth: "150px",
                             }}
@@ -316,7 +316,7 @@ export class Banners extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                               maxWidth: "150px",
                               minWidth: "150px",
                             }}
@@ -329,7 +329,7 @@ export class Banners extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Action
@@ -451,7 +451,7 @@ export class Banners extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}
@@ -616,7 +616,7 @@ export class Banners extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}

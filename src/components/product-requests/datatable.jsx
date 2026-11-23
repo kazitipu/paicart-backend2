@@ -1,8 +1,8 @@
+import DeliveryRequestCell from "../common/deliveryRequestCell.jsx";
 import { getOfferDiscount } from "../../constants/offerMath";
 import {
   getDisplayPaymentState,
   getOrderPayable,
-  PAYMENT_STATE_COLORS,
 } from "../../constants/paymentMath";
 import {
   Badge,
@@ -18,7 +18,22 @@ import {
   isInBatch,
   isBatchable,
   sumRmb,
+  requiresBatch,
 } from "../../constants/productRequestPayment";
+import {
+  BulkActionBar,
+  BulkPaymentModal,
+  BulkStatusModal,
+  selectionColumn,
+  toggleId,
+} from "../common/bulkActions.jsx";
+import { buildStatusPatch, PAYMENT_METHODS } from "../../constants/bulkActions";
+import PaymentModal, {
+  PmBadge,
+  orderStatusTone,
+  paymentStateTone,
+} from "../common/paymentModal.jsx";
+import { getOrderDue } from "../../constants/paymentMath";
 import { createProductRequestPaymentRedux } from "../../actions/index";
 import "../common/list-modern.css";
 import React, { Component, Fragment } from "react";
@@ -82,8 +97,75 @@ export class Datatable extends Component {
       batchError: null,
       skippedRequests: [],
       creatingBatch: false,
+      bulkSelected: [], // bookingIds ticked for bulk status / payment
+      bulkAction: null, // "status" | "payment"
     };
   }
+
+  /* Bulk actions ---------------------------------------------------------- */
+
+  /* Same choices as the single-request status dropdown. */
+  static BULK_STATUSES = [
+    { value: "Rates Provided", icon: "fa-tag" },
+    { value: "Purchased", icon: "fa-shopping-cart" },
+    { value: "Received in Warehouse", icon: "fa-cubes" },
+    { value: "Ready for fly", icon: "fa-plane" },
+    { value: "Bangladesh customs", icon: "fa-shield" },
+    { value: "Bangladesh warehouse", icon: "fa-check-square-o" },
+    { value: "Paicart warehouse", icon: "fa-home" },
+    { value: "Delivered", icon: "fa-handshake-o" },
+    { value: "Reject", danger: true },
+  ];
+
+  bulkItems = () =>
+    (this.props.myData || [])
+      .filter((request) => this.state.bulkSelected.includes(request.bookingId))
+      .map((request) => ({
+        id: request.bookingId,
+        label: request.bookingId,
+        sub: request.displayName || request.userId || "",
+        status: request.orderStatus,
+        due: getOrderDue(request),
+        raw: request,
+      }));
+
+  /* Same rules the single-request modal enforces before saving. */
+  validateBulkStatus = (item, status) => {
+    const request = item.raw;
+    if (status === "Reject") return null;
+    if (!request.orderTotal) return "No order total given";
+    if (requiresBatch(status) && !isInBatch(request))
+      return "Not in a payment batch yet";
+    return null;
+  };
+
+  applyBulkStatus = async (item, status) => {
+    const request = item.raw;
+    /* only the changed fields — a full copy of `request` would write back
+       whatever else was stale in it (e.g. an older status) */
+    await this.props.updateProductRequestRedux({
+      bookingId: request.bookingId,
+      ...buildStatusPatch(request, status, "orderStatus"),
+    });
+  };
+
+  /* Mirrors handleSubmit: one payment row per request. */
+  applyBulkPayment = async (item, { amount, method, paymentStatus }) => {
+    const request = item.raw;
+    await this.props.updateProductRequestRedux({
+      bookingId: request.bookingId,
+      paymentStatus,
+      payments: [
+        ...(request.payments || []),
+        {
+          amount,
+          method,
+          receivedBy: this.props.currentAdmin.name,
+          date: new Date().toLocaleDateString("en-GB"),
+        },
+      ],
+    });
+  };
 
   selectRow = (e, id) => {
     const checked = e.target.checked;
@@ -163,19 +245,26 @@ export class Datatable extends Component {
     }
     console.log(this.state);
 
+    /* The payment window keeps the copy it was opened with; writing that whole
+       copy back put a booking the admin had moved on straight back to its old
+       status. Write only the payment fields, built on the latest copy. */
+    const fresh =
+      (this.props.myData || []).find(
+        (r) => String(r.bookingId) === String(this.state.productObj.bookingId),
+      ) || this.state.productObj;
     await this.props.updateProductRequestRedux({
-      ...this.state.productObj,
+      bookingId: fresh.bookingId,
       paymentStatus:
         this.state.paymentStatus !== ""
           ? this.state.paymentStatus
-          : this.state.productObj.paymentStatus
-          ? this.state.productObj.paymentStatus
+          : fresh.paymentStatus
+          ? fresh.paymentStatus
           : "",
       payments:
-        this.state.productObj.payments &&
-        this.state.productObj.payments.length > 0
+        fresh.payments &&
+        fresh.payments.length > 0
           ? [
-              ...this.state.productObj.payments,
+              ...fresh.payments,
               {
                 amount: this.state.amount,
                 method: this.state.method,
@@ -201,6 +290,7 @@ export class Datatable extends Component {
       productObj: null,
       method: "",
       amount: "",
+      paymentStatus: "",
     });
     document.getElementById("close-button-for-payment-modal").click();
   };
@@ -414,47 +504,14 @@ export class Datatable extends Component {
           return (
             <Button
               variant="subtle"
-              data-toggle="modal"
-              data-target="#detailInfoModal"
-              onClick={async () => {
-                this.setState({
-                  productObj: requestObj,
-                });
-                let orderTracking2 =
-                  await this.props.getOrderTrackingResultRedux(
-                    requestObj.trackingNo
-                  );
-                console.log(orderTracking2);
-                if (orderTracking2) {
-                  this.props.updateProductRequestRedux({
-                    ...requestObj,
-                    shippingMark: orderTracking2.parcelsArray.map(
-                      (parcel) => `${parcel.shippingMark}`
-                    ),
-                    cargoCompany: "ALG Limited",
-                    lotNo: orderTracking2.lotArray.map((lot) => `${lot}`),
-                    ctnNo: orderTracking2.parcelsArray.map(
-                      (parcel) => `${parcel.parcelId}`
-                    ),
-                    cargoRate: orderTracking2.parcelsArray.map((parcel) => {
-                      if (parcel.ratePerKg) {
-                        return `${parcel.ratePerKg} tk/kg`;
-                      } else {
-                        return "Not given yet";
-                      }
-                    }),
-                    shippingChargeCargo: orderTracking2.parcelsArray.map(
-                      (parcel) => {
-                        if (parcel.finalTotal) {
-                          return `${parcel.finalTotal} Tk`;
-                        } else {
-                          return "Not given yet";
-                        }
-                      }
-                    ),
-                  });
-                }
-              }}
+              /* Opens the details page, which also syncs every tracking
+                 number's cartons from ALG (one lookup per number). */
+              onClick={() =>
+                this.props.history.push({
+                  pathname: `${process.env.PUBLIC_URL}/product-request/details/${requestObj.bookingId}`,
+                  state: { from: window.location.pathname + window.location.search },
+                })
+              }
             >
               Details
             </Button>
@@ -502,6 +559,26 @@ export class Datatable extends Component {
         },
         sortable: false,
       },
+      /* Paicart warehouse: how it will reach the customer — the customer's
+         request from To Receive, or set here by staff */
+      ...(this.props.orderStatus == "Paicart-warehouse"
+        ? [
+            {
+              Header: <b>Delivery request</b>,
+              id: "deliveryRequest",
+              accessor: () => "deliveryRequest",
+              minWidth: 170,
+              Cell: (row) => {
+                const record = myData.find((r) => r.bookingId == row.original["Booking Id"]);
+                return record ? (
+                  <DeliveryRequestCell kind="request" record={record} admin={this.props.currentAdmin} />
+                ) : null;
+              },
+              style: { textAlign: "left" },
+              sortable: false,
+            },
+          ]
+        : []),
       {
         Header: <b>Update</b>,
         id: "delete",
@@ -638,6 +715,9 @@ export class Datatable extends Component {
       });
     }
 
+    const bulkEnabled = !(currentAdmin && currentAdmin.status == "Partner");
+    const bulkIds = (myData || []).map((r) => r.bookingId);
+
     return (
       <Fragment>
         {newData.length === 0 ? (
@@ -662,10 +742,54 @@ export class Datatable extends Component {
         ) : (
           <ReactTable
             data={newData}
-            columns={columns}
+            columns={
+              bulkEnabled
+                ? [
+                    selectionColumn({
+                      allIds: bulkIds,
+                      selected: this.state.bulkSelected,
+                      getId: (row) => row["Booking Id"],
+                      onToggle: (id) =>
+                        this.setState((st) => ({
+                          bulkSelected: toggleId(st.bulkSelected, id),
+                        })),
+                      onToggleAll: (on) =>
+                        this.setState({ bulkSelected: on ? bulkIds : [] }),
+                    }),
+                    ...columns,
+                  ]
+                : columns
+            }
             defaultPageSize={pageSize}
             className={myClass}
             showPagination={pagination}
+          />
+        )}
+        {bulkEnabled && !this.state.bulkAction && (
+          <BulkActionBar
+            count={this.bulkItems().length}
+            totalDue={this.bulkItems().reduce((sum, i) => sum + i.due, 0)}
+            onStatus={() => this.setState({ bulkAction: "status" })}
+            onPayment={() => this.setState({ bulkAction: "payment" })}
+            onClear={() => this.setState({ bulkSelected: [] })}
+          />
+        )}
+        {this.state.bulkAction === "status" && (
+          <BulkStatusModal
+            items={this.bulkItems()}
+            statusOptions={Datatable.BULK_STATUSES}
+            validate={this.validateBulkStatus}
+            apply={this.applyBulkStatus}
+            onClose={() => this.setState({ bulkAction: null })}
+            onFinished={() => this.setState({ bulkSelected: [] })}
+          />
+        )}
+        {this.state.bulkAction === "payment" && (
+          <BulkPaymentModal
+            items={this.bulkItems()}
+            apply={this.applyBulkPayment}
+            onClose={() => this.setState({ bulkAction: null })}
+            onFinished={() => this.setState({ bulkSelected: [] })}
           />
         )}
         {/* Create a purchase batch from the ticked requests. */}
@@ -684,7 +808,7 @@ export class Datatable extends Component {
             <div className="modal-content">
               <div
                 className="modal-header"
-                style={{ background: "rgb(0, 37, 76)", color: "#fff" }}
+                style={{ background: "#ff6a00", color: "#fff" }}
               >
                 <div>
                   <h5
@@ -894,7 +1018,7 @@ export class Datatable extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}
@@ -1630,541 +1754,111 @@ export class Datatable extends Component {
             </div>
           </div>
         </div>
-        <div
-          className="modal fade"
-          id="paymentModal"
-          tabIndex="-1"
-          role="dialog"
-          aria-labelledby="exampleModalLabel"
-          aria-hidden="true"
-        >
-          <div
-            className="modal-dialog"
-            role="document"
-            style={{ margin: "auto", minWidth: "60%" }}
-          >
-            <div className="modal-content" style={{ top: 10, margin: "auto" }}>
-              <div
-                className="modal-header"
-                style={{
-                  backgroundColor: "rgb(0, 37, 76)",
-                  paddingTop: 20,
-                  paddingBottom: 20,
-                }}
-              >
-                <div
-                  className="modal-title"
-                  style={{
-                    fontWeight: "bold",
-                    fontSize: 17,
-                    color: "white",
-                  }}
-                  id="exampleModalLabel"
-                >
-                  Booking Id: {productObj && productObj.bookingId}
-                </div>
-                <button
-                  type="button"
-                  className="close"
-                  data-dismiss="modal"
-                  aria-label="Close"
-                  id="personal-info-close"
-                >
-                  <span aria-hidden="true" style={{ color: "white" }}>
-                    &times;
-                  </span>
-                </button>
-              </div>
-              <div className="modal-body">
-                <div className="row">
-                  <div
-                    className="col"
-                    style={{
-                      fontWeight: "bold",
-                      borderBottom: "1px solid gainsboro",
-                      paddingBottom: 5,
-                    }}
-                  >
-                    Make New Payment
-                  </div>
-                </div>
-                <div style={{ marginTop: 10 }}>
-                  <div
-                    className="row"
-                    style={{
-                      marginBottom: 10,
-                      borderBottom: "1px solid gainsboro",
-                    }}
-                  >
-                    <div className="col">
-                      <div
-                        style={{
-                          color: "#18768f",
-                          fontWeight: "bold",
-                          marginBottom: 5,
-                        }}
-                      >
-                        Order Information
-                      </div>
-
-                      <div className="category-list-shipping">
-                        Order Actual Total:{" "}
-                        <span
-                          style={{
-                            fontWeight: "lighter",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {productObj && productObj.actualTotal} Tk
-                        </span>
-                      </div>
-                      <div className="category-list-shipping">
-                        Coupon used:{" "}
-                        <span
-                          style={{
-                            fontWeight: "lighter",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {productObj && productObj.couponUsed
-                            ? productObj.couponUsed.name
-                            : "None"}{" "}
-                        </span>
-                      </div>
-                      <div className="category-list-shipping">
-                        Coupon Amount:{" "}
-                        <span
-                          style={{
-                            fontWeight: "lighter",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          -
-                          {productObj && productObj.couponAmount
-                            ? productObj.couponAmount
-                            : 0}{" "}
-                          Tk
-                        </span>
-                      </div>
-                      <div className="category-list-shipping">
-                        Offer (%):{" "}
-                        <span
-                          style={{
-                            fontWeight: "lighter",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {productObj && productObj.offer
-                            ? productObj.offer
-                            : "0%"}
-                        </span>
-                      </div>
-
-                      <div className="category-list-shipping">
-                        Order Total Cost:{" "}
-                        <span
-                          style={{
-                            fontWeight: "lighter",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {productObj && productObj.orderTotal} Tk
-                        </span>
-                      </div>
-                      <div className="category-list-shipping">
-                        Local Shipping cost (china):{" "}
-                        <span
-                          style={{
-                            fontWeight: "lighter",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {productObj && productObj.localShipping} Tk
-                        </span>
-                      </div>
-                      <div className="category-list-shipping">
-                        Packaging & other Cost:{" "}
-                        <span
-                          style={{
-                            fontWeight: "lighter",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {productObj && productObj.otherCost}
-                        </span>
-                      </div>
-                      <div className="category-list-shipping">
-                        Refund Amount:{" "}
-                        <span
-                          style={{
-                            fontWeight: "lighter",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {productObj && productObj.refund}
-                        </span>
-                      </div>
-                      <div className="category-list-shipping">
-                        Discount:{" "}
-                        <span
-                          style={{
-                            fontWeight: "lighter",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {productObj && productObj.discount}
-                        </span>
-                      </div>
-
-                      <div className="category-list-shipping">
-                        Total Payable amount(without Shipping):{" "}
-                        <span
-                          style={{
-                            fontWeight: "lighter",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {totalPayableAmount}Tk
-                        </span>
-                      </div>
-                      <div className="category-list-shipping">
-                        Received Weight:{" "}
-                        <span
-                          style={{
-                            fontWeight: "lighter",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {productObj && productObj.receivedWeight}kg
-                        </span>
-                      </div>
-                      <div className="category-list-shipping">
-                        Shipment Method:{" "}
-                        <span
-                          style={{
-                            fontWeight: "lighter",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {productObj &&
-                            (productObj.shipmentMethod === "Sea"
-                              ? "By Sea"
-                              : "By Air")}
-                        </span>
-                      </div>
-                      <div className="category-list-shipping">
-                        Customs & Shipping Rate:{" "}
-                        <span
-                          style={{
-                            fontWeight: "lighter",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {productObj && productObj.customerRate} Tk/Kg
-                        </span>
-                      </div>
-                      <div className="category-list-shipping">
-                        Total Shipping Charge:{" "}
-                        <span
-                          style={{
-                            fontWeight: "lighter",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {productObj && productObj.shippingChargeCustomer} Tk
-                        </span>
-                      </div>
-                      <div className="category-list-shipping">
-                        Total Payable amount(including Shipping):{" "}
-                        <span
-                          style={{
-                            fontWeight: "lighter",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {totalPayableAmountIncludingShipping
-                            ? totalPayableAmountIncludingShipping
-                            : 0}
-                          Tk
-                        </span>
-                      </div>
-                      <div className="category-list-shipping">
-                        Total Paid:{" "}
-                        <span
-                          style={{
-                            fontWeight: "lighter",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {totalPaid}Tk
-                        </span>
-                      </div>
-                      <div className="category-list-shipping">
-                        Total Due:{" "}
-                        <span
-                          style={{
-                            fontWeight: "lighter",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {totalPayableAmountIncludingShipping
-                            ? totalPayableAmountIncludingShipping - totalPaid
-                            : 0}
-                          Tk
-                        </span>
-                      </div>
-
-                      <div className="category-list-shipping">
-                        Payment Status:{" "}
-                        <span
-                          style={{
-                            padding: "1px 6px",
-                            fontWeight: "bold",
-                            color: "white",
-                            borderRadius: 5,
-                            background:
-                                PAYMENT_STATE_COLORS[getDisplayPaymentState(productObj)] ||
-                                "red",
-                            textAlign: "center",
-                          }}
-                          onClick={() => {
-                            this.setState({
-                              productObj,
-                            });
-                          }}
-                        >
-                          {getDisplayPaymentState(productObj)}
-                        </span>
-                      </div>
-
-                      <div className="category-list-shipping">
-                        Order Status:{" "}
-                        <span
-                          style={{
-                            padding: 10,
-                            fontWeight: "bold",
-                            paddingTop: 0,
-                            color: "white",
-                            padding: "3px 7px",
-                            borderRadius: 5,
-                            backgroundColor: productObj
-                              ? productObj.orderStatus == "pending"
-                                ? "gainsboro"
-                                : productObj.orderStatus == "Purchased"
-                                ? "gray"
-                                : productObj.orderStatus ==
-                                  "Received in Warehouse"
-                                ? "orange"
-                                : productObj.orderStatus == "Ready for fly"
-                                ? "darkorange"
-                                : productObj.orderStatus == "Bangladesh customs"
-                                ? "chocolate"
-                                : productObj.orderStatus == "Paicart warehouse"
-                                ? "green"
-                                : productObj.orderStatus ==
-                                  "Bangladesh warehouse"
-                                ? "#00a3a3"
-                                : productObj.orderStatus == "Delivered"
-                                ? "darkgreen"
-                                : "red"
-                              : "white",
-                            textAlign: "center",
-                          }}
-                        >
-                          {productObj && statusDisplay(productObj.orderStatus)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="row">
-                  <div className="col">
-                    <form
-                      onSubmit={(e) =>
-                        this.handleSubmit(
-                          e,
-                          totalPayableAmountIncludingShipping - totalPaid
-                        )
-                      }
-                      className="rounded-field mt-2"
-                    >
-                      <div className="form-row mb-2">
-                        <div className="col">
-                          <label
-                            style={{
-                              marginBottom: 0,
-                              fontSize: 13,
-                              fontWeight: "bold",
-                            }}
-                          >
-                            Payment Method
-                          </label>
-
-                          <select
-                            title=""
-                            name="method"
-                            className="custom-select"
-                            aria-required="true"
-                            aria-invalid="false"
-                            onChange={this.handleChange}
-                            style={{ fontSize: ".8rem" }}
-                            value={this.state.method}
-                            required
-                          >
-                            <option value="">Select Method</option>
-                            <option value="Cash">Cash</option>
-                            <option value="Bkash">Bkash</option>
-                            <option value="Nagad">Nagad</option>
-                            <option value="Rocket">Rocket</option>
-                            <option value="City">City Bank</option>
-                          </select>
-                        </div>
-                        <div className="col">
-                          <label
-                            style={{
-                              marginBottom: 0,
-                              fontSize: 13,
-                              fontWeight: "bold",
-                            }}
-                          >
-                            Paid amount
-                          </label>
-
-                          <input
-                            type="number"
-                            name="amount"
-                            className="form-control"
-                            placeholder="Enter amount"
-                            style={{ fontSize: "1rem" }}
-                            onChange={this.handleChange}
-                            value={this.state.amount}
-                            required
-                          />
-                        </div>
-                        <div className="col">
-                          <label
-                            style={{
-                              marginBottom: 0,
-                              fontSize: 13,
-                              fontWeight: "bold",
-                            }}
-                          >
-                            Payment Status
-                          </label>
-
-                          <select
-                            title=""
-                            name="paymentStatus"
-                            className="custom-select"
-                            aria-required="true"
-                            aria-invalid="false"
-                            onChange={this.handleChange}
-                            style={{ fontSize: ".8rem" }}
-                            value={this.state.paymentStatus}
-                            required
-                          >
-                            <option value="">Select Payment Status</option>
-                            <option value="Partially Paid">
-                              Partially Paid
-                            </option>
-                            <option value="Paid">Full Paid</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      <div className="form-row">
-                        <div
-                          className="col pt-3"
-                          style={{
-                            display: "flex",
-                            justifyContent: "flex-end",
-                          }}
-                        >
-                          <button
-                            type="submit"
-                            className="btn"
-                            style={{
-                              background: "rgb(0, 37, 76)",
-                              color: "white",
-                            }}
-                          >
-                            Update
-                            <i className="icofont-rounded-right"></i>
-                          </button>
-                        </div>
-                      </div>
-                    </form>
-                  </div>
-                </div>
-                <div className="row">
-                  {this.state.productObj &&
-                    this.state.productObj.payments &&
-                    this.state.productObj.payments.length > 0 && (
-                      <div className="col">
-                        <div
-                          className="row"
-                          style={{
-                            height: 1,
-                            width: "100%",
-                            background: "gainsboro",
-                            marginTop: 20,
-                            marginBottom: 20,
-                            marginRight: 0,
-                            marginLeft: 0,
-                          }}
-                        ></div>
-                        <div
-                          style={{
-                            paddingLeft: 0,
-                            color: "#18768f",
-                            fontWeight: "bold",
-                          }}
-                        >
-                          Previous Payments
-                        </div>
-                        <table className="table table-bordered table-striped table-hover">
-                          <thead
-                            style={{ background: "#18768f", color: "white" }}
-                          >
-                            <tr>
-                              <td style={{ fontWeight: "bold" }}>Date</td>
-                              <td style={{ fontWeight: "bold" }}>Method</td>
-                              <td style={{ fontWeight: "bold" }}>Amount</td>
-
-                              <td style={{ fontWeight: "bold" }}>
-                                Approved by
-                              </td>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {this.state.productObj.payments.map((payment) => (
-                              <tr>
-                                <td>{payment.date}</td>
-                                <td>{payment.method}</td>
-                                <td>{payment.amount}Tk</td>
-                                <td>{payment.receivedBy}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  data-dismiss="modal"
-                  id="close-button-for-payment-modal"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <PaymentModal
+          idLabel="Booking Id"
+          idValue={productObj && productObj.bookingId}
+          badges={
+            productObj && (
+              <>
+                <PmBadge tone={productObj.shipmentMethod === "Sea" ? "teal" : "blue"}>
+                  {productObj.shipmentMethod === "Sea" ? "By Sea" : "By Air"}
+                </PmBadge>
+                <PmBadge tone={paymentStateTone(getDisplayPaymentState(productObj))}>
+                  {getDisplayPaymentState(productObj)}
+                </PmBadge>
+                <PmBadge tone={orderStatusTone(productObj.orderStatus)}>
+                  {statusDisplay(productObj.orderStatus)}
+                </PmBadge>
+              </>
+            )
+          }
+          summary={{
+            total: totalPayableAmountIncludingShipping || 0,
+            paid: totalPaid,
+            totalHint: "including shipping",
+          }}
+          breakdown={
+            productObj
+              ? [
+                  { section: "Product" },
+                  { label: "Order actual total", value: productObj.actualTotal },
+                  {
+                    label: `Coupon${
+                      productObj.couponUsed ? ` (${productObj.couponUsed.name})` : ""
+                    }`,
+                    value: productObj.couponAmount,
+                    sign: "-",
+                  },
+                  {
+                    label: `Pay-now discount (${productObj.offer || 0}%)`,
+                    value: getOfferDiscount(productObj),
+                    sign: "-",
+                  },
+                  {
+                    label: "Order total cost",
+                    value: productObj.orderTotal,
+                    strong: true,
+                  },
+                  { section: "Charges" },
+                  {
+                    label: "Local shipping (China)",
+                    value: productObj.localShipping,
+                    sign: "+",
+                  },
+                  {
+                    label: "Packaging & other cost",
+                    value: productObj.otherCost,
+                    sign: "+",
+                  },
+                  {
+                    label: "Discount",
+                    value: productObj.discount,
+                    sign: "-",
+                  },
+                  {
+                    label: "Payable without shipping",
+                    value: totalPayableAmount,
+                    strong: true,
+                  },
+                  { section: "International shipping" },
+                  {
+                    label: "Total shipping charge",
+                    value: productObj.shippingChargeCustomer,
+                    sign: "+",
+                  },
+                ]
+              : []
+          }
+          facts={
+            productObj
+              ? [
+                  {
+                    label: "Received weight",
+                    value: `${productObj.receivedWeight || 0} kg`,
+                  },
+                  {
+                    label: "Customs & shipping rate",
+                    value: `৳${productObj.customerRate || 0}/kg`,
+                  },
+                  {
+                    label: "Refund amount",
+                    value: `৳${productObj.refund || 0}`,
+                  },
+                ]
+              : []
+          }
+          methods={PAYMENT_METHODS}
+          form={{
+            method: this.state.method,
+            amount: this.state.amount,
+            paymentStatus: this.state.paymentStatus,
+          }}
+          onChange={this.handleChange}
+          onSubmit={(e) =>
+            this.handleSubmit(e, totalPayableAmountIncludingShipping - totalPaid)
+          }
+          payments={productObj && productObj.payments}
+        />
         <div
           className="modal fade"
           id="deleteModal"
@@ -2182,7 +1876,7 @@ export class Datatable extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}

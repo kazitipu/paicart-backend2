@@ -5,6 +5,7 @@ import { ToastContainer, toast } from "react-toastify";
 import Datatable from "./datatable.jsx";
 import {
   getAllShipmentRequestsRedux,
+  updateShipmentRequestRedux,
   getAllWarehousesRedux,
   getAllD2DRatesRedux,
   getAllUsersRedux,
@@ -19,6 +20,7 @@ import { Link } from "react-router-dom";
 import UpdateRequestModal from "./updateRequestModal";
 import man from "../../components/products/physical/plus image.jpeg";
 import { connect } from "react-redux";
+import { syncStatusesFromAlg } from "../common/algStatusSync";
 import { Search } from "react-feather";
 import { HashLoader, CircleLoader } from "react-spinners";
 import "./updateRequestModal.css";
@@ -132,6 +134,16 @@ export class New extends Component {
       this.props.getAllShipmentRequestsRedux("Reject");
     }
   };
+
+  /* Move bookings forward from ALG's lot tracking when the list loads
+     (components/common/algStatusSync.js). */
+  componentDidUpdate(prevProps) {
+    if (prevProps.allShipmentRequests !== this.props.allShipmentRequests) {
+      syncStatusesFromAlg(this.props.allShipmentRequests, "ship", (bookingId, patch) =>
+        this.props.updateShipmentRequestRedux({ bookingId, ...patch })
+      );
+    }
+  }
 
   componentWillReceiveProps = (nextProps) => {
     if (
@@ -930,7 +942,7 @@ export class New extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}
@@ -1669,4 +1681,5 @@ export default connect(mapStateToProps, {
   getAllD2DRatesRedux,
   getAllUsersRedux,
   setShipForMeRedux,
+  updateShipmentRequestRedux,
 })(New);

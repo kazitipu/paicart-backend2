@@ -10,6 +10,7 @@ import {
 import { Link } from "react-router-dom";
 
 import { connect } from "react-redux";
+import { showLabel } from "../../../constants/displayLabels";
 
 export class MonthlyExpenseByMonth extends Component {
   constructor(props) {
@@ -97,7 +98,7 @@ export class MonthlyExpenseByMonth extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             #
@@ -107,7 +108,7 @@ export class MonthlyExpenseByMonth extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Date
@@ -117,7 +118,7 @@ export class MonthlyExpenseByMonth extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Cateogry
@@ -127,7 +128,7 @@ export class MonthlyExpenseByMonth extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Sub Category
@@ -137,7 +138,7 @@ export class MonthlyExpenseByMonth extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Note
@@ -147,7 +148,7 @@ export class MonthlyExpenseByMonth extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Amount
@@ -160,8 +161,8 @@ export class MonthlyExpenseByMonth extends Component {
                             <tr key={index}>
                               <th scope="row">{index + 1}</th>
                               <td>{expense.date}</td>
-                              <td>{expense.category}</td>
-                              <td>{expense.subCategory}</td>
+                              <td>{showLabel(expense.category)}</td>
+                              <td>{showLabel(expense.subCategory)}</td>
                               <td>{expense.note}</td>
                               <td>{expense.amount}Tk</td>
                             </tr>
@@ -182,8 +183,8 @@ export class MonthlyExpenseByMonth extends Component {
                             <tr key={index}>
                               <th scope="row">{index + 1}</th>
                               <td>{expense.date}</td>
-                              <td>{expense.category}</td>
-                              <td>{expense.subCategory}</td>
+                              <td>{showLabel(expense.category)}</td>
+                              <td>{showLabel(expense.subCategory)}</td>
                               <td>{expense.note}</td>
                               <td>{expense.amount}Tk</td>
                             </tr>

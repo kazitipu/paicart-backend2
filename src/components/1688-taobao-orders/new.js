@@ -3,7 +3,8 @@ import Breadcrumb from "../common/breadcrumb";
 import "react-toastify/dist/ReactToastify.css";
 import { ToastContainer, toast } from "react-toastify";
 import Datatable from "./datatable.jsx";
-import { getAllOrdersApiRedux, getAllEmployeeRedux } from "../../actions/index";
+import { getAllOrdersApiRedux, getAllEmployeeRedux, updateOrderApiRedux } from "../../actions/index";
+import { syncStatusesFromAlg } from "../common/algStatusSync";
 import { Link } from "react-router-dom";
 import UpdateRequestModal from "./updateRequestModal";
 import {
@@ -17,6 +18,8 @@ import {
 } from "../../actions/get1688Data.js";
 import { build1688OrderUpdate } from "../../constants/orderStatus1688";
 import SyncResultModal from "./syncResultModal.jsx";
+import { showDialog } from "../common/appDialog.jsx";
+
 import { getDefaultDateRange } from "../../constants/dateRange";
 import { connect } from "react-redux";
 import { Search } from "react-feather";
@@ -33,6 +36,13 @@ import { getPaymentState, PAYMENT_STATES } from "../../constants/paymentMath";
 import { buildShopGroups, shopKeyOf, sortByShop } from "../../constants/shopGroups";
 import { getAllRequestsForSearch, getCustomersForSearch } from "../../firebase/firebase.utils";
 import { buildCustomerIndex, customerSearchFields } from "../../constants/customerSearch";
+
+/* A stored tracking number that is actually there — older saves left "0",
+   "undefined" and the like, which hid orders from the tracking fetch. */
+const isRealTracking = (value) => {
+  const t = String(value == null ? "" : value).trim();
+  return !!t && !/^(0|undefined|null|nan|-|—)$/i.test(t);
+};
 /* Tab slug -> the label the team uses. Routes keep their slugs so existing
    links keep working. */
 const STATUS_LABELS = {
@@ -144,6 +154,16 @@ export class New extends Component {
       this.applyRange({ keepSearch: true }),
     );
   };
+
+  /* Move orders forward from ALG's lot tracking when the list loads
+     (components/common/algStatusSync.js). */
+  componentDidUpdate(prevProps) {
+    if (prevProps.ordersApi !== this.props.ordersApi) {
+      syncStatusesFromAlg(this.props.ordersApi, "order", (orderId, patch) =>
+        this.props.updateOrderApiRedux({ orderId, ...patch })
+      );
+    }
+  }
 
   componentWillReceiveProps = async (nextProps) => {
     // Local calendar days - toISOString() would report the UTC date, which
@@ -400,34 +420,100 @@ export class New extends Component {
     });
   };
 
-  getAllTrackingNo = async (orders) => {
-    if (orders && orders.length > 0) {
-      if (this.state.loader1) {
-        return;
-      }
-      this.setState({
-        loader1: true,
-      });
-      let newOrders = [];
-      for (let i = 0; i < orders.length; i++) {
-        const order = orders[i];
-        let trackingArray = await get1688TrackingStatus(order.orderNumber);
-        let trackingObj = trackingArray ? trackingArray[0] : null;
+  /* Fetches the 1688 seller's tracking number(s) for every listed order that
+     has been placed on 1688 but has no tracking number yet, then reports
+     exactly what happened. An order shipped in several parcels gets all of
+     its tracking numbers (comma-separated, as elsewhere). */
+  getAllTrackingNo = async (shown) => {
+    if (this.state.loader1) return;
+    const list = shown || [];
+    const noOrderNumber = list.filter((o) => !o.orderNumber);
+    const alreadyTracked = list.filter((o) => o.orderNumber && isRealTracking(o.trackingNo));
+    const toFetch = list.filter((o) => o.orderNumber && !isRealTracking(o.trackingNo));
 
-        console.log(trackingObj);
-        if (trackingObj && trackingObj.logisticsBillNo) {
-          newOrders.push({ ...order, trackingNo: trackingObj.logisticsBillNo });
-        }
-      }
-      this.props.updateOrdersWithTrackingNoRedux(newOrders);
-
-      this.setState({
-        loader1: false,
+    if (!toFetch.length) {
+      showDialog({
+        tone: "warning",
+        title: "No orders need a 1688 tracking number",
+        message: list.length
+          ? "Tracking numbers are fetched only for orders that have been placed on 1688 (they have a 1688 order number) and don't have a tracking number yet. None of the orders in this list match."
+          : "There are no orders in this list. Change the tab, date range or search, then try again.",
+        items: list.length
+          ? [
+              { label: "Orders in this list", value: list.length },
+              { label: "Already have a tracking number", value: alreadyTracked.length, tone: "success" },
+              { label: "Not placed on 1688 yet (no 1688 order number)", value: noOrderNumber.length, tone: "warning" },
+            ]
+          : [],
       });
-      console.log(newOrders);
-    } else {
-      alert("At least select one order to get 1688 Tracking No");
+      return;
     }
+
+    this.setState({ loader1: true });
+    const found = [];
+    const notShipped = [];
+    const failed = [];
+    for (let i = 0; i < toFetch.length; i++) {
+      const order = toFetch[i];
+      try {
+        const trace = await get1688TrackingStatus(order.orderNumber);
+        const numbers = Array.from(
+          new Set(
+            (trace || [])
+              .map((t) => (t && t.logisticsBillNo ? String(t.logisticsBillNo).trim() : ""))
+              .filter(isRealTracking),
+          ),
+        );
+        if (numbers.length) found.push({ ...order, trackingNo: numbers.join(", ") });
+        else notShipped.push(order);
+      } catch (error) {
+        failed.push({ order, error: (error && error.message) || String(error) });
+      }
+    }
+
+    let saveError = "";
+    if (found.length) {
+      try {
+        await this.props.updateOrdersWithTrackingNoRedux(found);
+      } catch (error) {
+        saveError = (error && error.message) || String(error);
+      }
+    }
+    this.setState({ loader1: false });
+
+    const saved = saveError ? 0 : found.length;
+    const items = [];
+    if (saved) {
+      found.slice(0, 8).forEach((o) => items.push({ label: `#${o.orderId}`, value: o.trackingNo, tone: "success" }));
+      if (found.length > 8) items.push({ label: `…and ${found.length - 8} more orders`, value: "", tone: "success" });
+    }
+    if (notShipped.length)
+      items.push({ label: "Not shipped by the 1688 seller yet", value: `${notShipped.length} order${notShipped.length === 1 ? "" : "s"}`, tone: "warning" });
+    if (failed.length)
+      items.push({ label: "Couldn't check on 1688", value: `${failed.length} order${failed.length === 1 ? "" : "s"}`, tone: "error" });
+    if (alreadyTracked.length)
+      items.push({ label: "Skipped — already had a tracking number", value: `${alreadyTracked.length}` });
+
+    const details = [
+      saveError && `Saving to the database failed: ${saveError}`,
+      ...failed.map((f) => `#${f.order.orderId} (1688 order ${f.order.orderNumber}): ${f.error}`),
+    ].filter(Boolean).join("\n");
+
+    showDialog({
+      tone: saveError || (failed.length && !saved) ? "error" : saved ? "success" : failed.length ? "warning" : "info",
+      title: saveError
+        ? "Tracking numbers found but not saved"
+        : saved
+          ? `Tracking number added to ${saved} order${saved === 1 ? "" : "s"}`
+          : "No new tracking numbers yet",
+      message: saveError
+        ? `1688 returned tracking numbers for ${found.length} order${found.length === 1 ? "" : "s"}, but saving them failed. Nothing was changed — try again.`
+        : `Checked ${toFetch.length} order${toFetch.length === 1 ? "" : "s"} on 1688.` +
+          (notShipped.length ? ` ${notShipped.length} ${notShipped.length === 1 ? "hasn't" : "haven't"} been shipped by the seller yet — try again later.` : "") +
+          (failed.length ? ` ${failed.length} couldn't be checked (see technical details).` : ""),
+      items,
+      details,
+    });
   };
 
   // Bulk counterpart of the per-row order-number click: pulls the total and
@@ -576,7 +662,7 @@ export class New extends Component {
           order={this.state.order}
         />
 
-        <Breadcrumb title={statusLabel} parent="1688/tabao Orders" />
+        <Breadcrumb title={statusLabel} parent="Website Orders" />
         {/* <!-- Container-fluid starts--> */}
         <div className="container-fluid">
           <div className="row">
@@ -631,10 +717,7 @@ export class New extends Component {
                       <Button
                         variant="ghost"
                         onClick={() => {
-                          let ordersWithOrderNumber = displayedOrders.filter(
-                            (order) => order.orderNumber && !order.trackingNo,
-                          );
-                          this.getAllTrackingNo(ordersWithOrderNumber);
+                          this.getAllTrackingNo(displayedOrders);
                         }}
                         style={{ minWidth: 168 }}
                       >
@@ -927,4 +1010,5 @@ export default connect(mapStateToProps, {
   getAllEmployeeRedux,
   updateOrdersWithTrackingNoRedux,
   updateOrdersFrom1688Redux,
+  updateOrderApiRedux,
 })(New);

@@ -172,7 +172,7 @@ export class Warehouses extends Component {
                         style={{
                           fontSize: "130%",
                           marginRight: "5px",
-                          color: "#00254c",
+                          color: "#e05900",
                         }}
                       ></i>
                       Warehouses <br />
@@ -238,7 +238,7 @@ export class Warehouses extends Component {
                           data-toggle="modal"
                           data-target="#personalInfoModal"
                           style={{
-                            backgroundColor: "rgb(0, 37, 76)",
+                            backgroundColor: "#ff6a00",
                             border: "none",
                             color: "white",
                             fontSize: 11,
@@ -350,7 +350,7 @@ export class Warehouses extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                               minWidth: "150px",
                               maxWidth: "150px",
                             }}
@@ -416,7 +416,7 @@ export class Warehouses extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                               maxWidth: "150px",
                               minWidth: "150px",
                             }}
@@ -428,7 +428,7 @@ export class Warehouses extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                               maxWidth: "150px",
                               minWidth: "150px",
                             }}
@@ -440,7 +440,7 @@ export class Warehouses extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                               maxWidth: "150px",
                               minWidth: "150px",
                             }}
@@ -452,7 +452,7 @@ export class Warehouses extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                               maxWidth: "100px",
                               minWidth: "100px",
                             }}
@@ -465,7 +465,7 @@ export class Warehouses extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                               maxWidth: "150px",
                               minWidth: "150px",
                             }}
@@ -478,7 +478,7 @@ export class Warehouses extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Action
@@ -628,7 +628,7 @@ export class Warehouses extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}
@@ -823,7 +823,7 @@ export class Warehouses extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}
@@ -927,7 +927,7 @@ export class Warehouses extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}

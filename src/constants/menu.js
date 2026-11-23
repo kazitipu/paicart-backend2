@@ -234,6 +234,25 @@ export const MENUITEMSFORADMIN = [
     ],
   },
   {
+    title: "Accounts",
+    icon: DollarSign,
+    color: "#0d9488",
+    type: "sub",
+    active: false,
+    children: [
+      {
+        path: "/accounts/client-bills",
+        title: "Client Bills",
+        type: "link",
+      },
+      {
+        path: "/client-due",
+        title: "Client Due",
+        type: "link",
+      },
+    ],
+  },
+  {
     title: "Receive Products CN",
     icon: Download,
     color: "#0ea5e9",
@@ -333,7 +352,7 @@ export const MENUITEMSFORADMIN = [
   },
 
   {
-    title: "1688/taobao Orders",
+    title: "Website Orders",
     icon: ShoppingCart,
     color: "#ef4444",
     type: "sub",
@@ -622,6 +641,16 @@ export const MENUITEMSFORADMIN = [
         title: "Cargo collection sheet",
         type: "link",
       },
+      {
+        path: "/delivery-requests",
+        title: "Delivery Requests",
+        type: "link",
+      },
+      {
+        path: "/client-due",
+        title: "Client Due",
+        type: "link",
+      },
     ],
   },
   {
@@ -633,7 +662,7 @@ export const MENUITEMSFORADMIN = [
     children: [
       {
         path: "/1688-taobao-orders/paid",
-        title: "1688/Taobao Orders",
+        title: "Website Orders",
         type: "link",
       },
       {
@@ -936,6 +965,25 @@ export const MENUITEMSFORPARTNER = [
     ],
   },
   {
+    title: "Accounts",
+    icon: DollarSign,
+    color: "#0d9488",
+    type: "sub",
+    active: false,
+    children: [
+      {
+        path: "/accounts/client-bills",
+        title: "Client Bills",
+        type: "link",
+      },
+      {
+        path: "/client-due",
+        title: "Client Due",
+        type: "link",
+      },
+    ],
+  },
+  {
     title: "Products",
     icon: Package,
     color: "#e11d48",
@@ -1007,7 +1055,7 @@ export const MENUITEMSFORPARTNER = [
   },
 
   {
-    title: "1688/taobao Orders",
+    title: "Website Orders",
     icon: ShoppingCart,
     color: "#ef4444",
     type: "sub",
@@ -1296,6 +1344,16 @@ export const MENUITEMSFORPARTNER = [
         title: "Cargo collection sheet",
         type: "link",
       },
+      {
+        path: "/delivery-requests",
+        title: "Delivery Requests",
+        type: "link",
+      },
+      {
+        path: "/client-due",
+        title: "Client Due",
+        type: "link",
+      },
     ],
   },
   {
@@ -1307,7 +1365,7 @@ export const MENUITEMSFORPARTNER = [
     children: [
       {
         path: "/1688-taobao-orders/paid",
-        title: "1688/Taobao Orders",
+        title: "Website Orders",
         type: "link",
       },
       {
@@ -1473,6 +1531,25 @@ export const MENUITEMSFORACCOUNTS = [
       },
     ],
   },
+  {
+    title: "Accounts",
+    icon: DollarSign,
+    color: "#0d9488",
+    type: "sub",
+    active: false,
+    children: [
+      {
+        path: "/accounts/client-bills",
+        title: "Client Bills",
+        type: "link",
+      },
+      {
+        path: "/client-due",
+        title: "Client Due",
+        type: "link",
+      },
+    ],
+  },
 
   {
     title: "Business Consultancy",
@@ -1527,6 +1604,16 @@ export const MENUITEMSFORACCOUNTS = [
       {
         path: "/cargo-collection",
         title: "Cargo collection sheet",
+        type: "link",
+      },
+      {
+        path: "/delivery-requests",
+        title: "Delivery Requests",
+        type: "link",
+      },
+      {
+        path: "/client-due",
+        title: "Client Due",
         type: "link",
       },
     ],
@@ -1746,7 +1833,7 @@ export const MENUITEMSFOROFFICER = [
   },
 
   {
-    title: "1688/taobao Orders",
+    title: "Website Orders",
     icon: ShoppingCart,
     color: "#ef4444",
     type: "sub",

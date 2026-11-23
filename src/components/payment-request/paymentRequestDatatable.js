@@ -208,7 +208,7 @@ export class Datatable extends Component {
                     style={{ minWidth: "12%" }}
                   >
                     <Popover.Title
-                      style={{ backgroundColor: "rgb(0, 37, 76)", color: "white" }}
+                      style={{ backgroundColor: "#ff6a00", color: "white" }}
                       as="h3"
                     >
                       Bookin Id List

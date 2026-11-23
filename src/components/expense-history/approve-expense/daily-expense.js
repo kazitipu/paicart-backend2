@@ -24,6 +24,7 @@ import {
   updateCashSummaryCashOut,
   updateCashSummaryCashIn,
 } from "../../../firebase/firebase.utils";
+import { showLabel } from "../../../constants/displayLabels";
 export class DailyExpense extends Component {
   constructor(props) {
     super(props);
@@ -186,7 +187,7 @@ export class DailyExpense extends Component {
                         >
                           <option value="">Filter by category </option>
                           <option value="">All </option>
-                          <option value="1688 Order">1688 Order</option>
+                          <option value="1688 Order">Website Order</option>
                           <option value="Product Request">
                             Product Request
                           </option>
@@ -232,7 +233,7 @@ export class DailyExpense extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             #
@@ -242,7 +243,7 @@ export class DailyExpense extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Cateogry
@@ -252,7 +253,7 @@ export class DailyExpense extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Sub Category
@@ -262,7 +263,7 @@ export class DailyExpense extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Note
@@ -272,7 +273,7 @@ export class DailyExpense extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Amount
@@ -282,7 +283,7 @@ export class DailyExpense extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Action
@@ -294,8 +295,8 @@ export class DailyExpense extends Component {
                           {renderableExpense.map((expense, index) => (
                             <tr key={index}>
                               <th scope="row">{index + 1}</th>
-                              <td>{expense.category}</td>
-                              <td>{expense.subCategory}</td>
+                              <td>{showLabel(expense.category)}</td>
+                              <td>{showLabel(expense.subCategory)}</td>
                               <td>{expense.note}</td>
                               <td>{expense.amount}Tk</td>
                               <td>
@@ -394,8 +395,8 @@ export class DailyExpense extends Component {
                           {renderableCashIn.map((expense, index) => (
                             <tr key={index}>
                               <th scope="row">{index + 1}</th>
-                              <td>{expense.category}</td>
-                              <td>{expense.subCategory}</td>
+                              <td>{showLabel(expense.category)}</td>
+                              <td>{showLabel(expense.subCategory)}</td>
                               <td>{expense.note}</td>
                               <td>{expense.amount}Tk</td>
                               <td>
@@ -519,7 +520,7 @@ export class DailyExpense extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}
@@ -714,7 +715,7 @@ export class DailyExpense extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}
@@ -809,7 +810,7 @@ export class DailyExpense extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}

@@ -108,7 +108,7 @@ export class MonthlyExpense extends Component {
                         style={{
                           padding: "30px 15px",
                           color: "white",
-                          backgroundColor: "#00254c",
+                          backgroundColor: "#ff6a00",
                           fontSize: 12,
                         }}
                       >
@@ -119,7 +119,7 @@ export class MonthlyExpense extends Component {
                         style={{
                           padding: "30px 15px",
                           color: "white",
-                          backgroundColor: "#00254c",
+                          backgroundColor: "#ff6a00",
                           fontSize: 12,
                         }}
                       >
@@ -130,7 +130,7 @@ export class MonthlyExpense extends Component {
                         style={{
                           padding: "30px 15px",
                           color: "white",
-                          backgroundColor: "#00254c",
+                          backgroundColor: "#ff6a00",
                           fontSize: 12,
                         }}
                       >
@@ -141,7 +141,7 @@ export class MonthlyExpense extends Component {
                         style={{
                           padding: "30px 15px",
                           color: "white",
-                          backgroundColor: "#00254c",
+                          backgroundColor: "#ff6a00",
                           fontSize: 12,
                         }}
                       >
@@ -152,7 +152,7 @@ export class MonthlyExpense extends Component {
                         style={{
                           padding: "30px 15px",
                           color: "white",
-                          backgroundColor: "#00254c",
+                          backgroundColor: "#ff6a00",
                           fontSize: 12,
                         }}
                       >
@@ -163,7 +163,7 @@ export class MonthlyExpense extends Component {
                         style={{
                           padding: "30px 15px",
                           color: "white",
-                          backgroundColor: "#00254c",
+                          backgroundColor: "#ff6a00",
                           fontSize: 12,
                         }}
                       >
@@ -175,7 +175,7 @@ export class MonthlyExpense extends Component {
                         style={{
                           padding: "30px 15px",
                           color: "white",
-                          backgroundColor: "#00254c",
+                          backgroundColor: "#ff6a00",
                           fontSize: 12,
                         }}
                       >
@@ -186,7 +186,7 @@ export class MonthlyExpense extends Component {
                         style={{
                           padding: "30px 15px",
                           color: "white",
-                          backgroundColor: "#00254c",
+                          backgroundColor: "#ff6a00",
                           fontSize: 12,
                         }}
                       >
@@ -197,7 +197,7 @@ export class MonthlyExpense extends Component {
                         style={{
                           padding: "30px 15px",
                           color: "white",
-                          backgroundColor: "#00254c",
+                          backgroundColor: "#ff6a00",
                           fontSize: 12,
                         }}
                       >
@@ -208,7 +208,7 @@ export class MonthlyExpense extends Component {
                         style={{
                           padding: "30px 15px",
                           color: "white",
-                          backgroundColor: "#00254c",
+                          backgroundColor: "#ff6a00",
                           fontSize: 12,
                         }}
                       >
@@ -220,7 +220,7 @@ export class MonthlyExpense extends Component {
                         style={{
                           padding: "30px 15px",
                           color: "white",
-                          backgroundColor: "#00254c",
+                          backgroundColor: "#ff6a00",
                           fontSize: 12,
                         }}
                       >
@@ -231,7 +231,7 @@ export class MonthlyExpense extends Component {
                         style={{
                           padding: "30px 15px",
                           color: "white",
-                          backgroundColor: "#00254c",
+                          backgroundColor: "#ff6a00",
                           fontSize: 12,
                         }}
                       >
@@ -243,7 +243,7 @@ export class MonthlyExpense extends Component {
                         style={{
                           padding: "30px 15px",
                           color: "white",
-                          backgroundColor: "#00254c",
+                          backgroundColor: "#ff6a00",
                           fontSize: 12,
                         }}
                       >
@@ -254,7 +254,7 @@ export class MonthlyExpense extends Component {
                         style={{
                           padding: "30px 15px",
                           color: "white",
-                          backgroundColor: "#00254c",
+                          backgroundColor: "#ff6a00",
                           fontSize: 12,
                         }}
                       >

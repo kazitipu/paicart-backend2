@@ -6,6 +6,7 @@ import { ToastContainer, toast } from "react-toastify";
 import { getAllFundsRedux } from "../../../actions/index";
 
 import { connect } from "react-redux";
+import { showLabel } from "../../../constants/displayLabels";
 
 export class Fund extends Component {
   constructor(props) {
@@ -79,7 +80,7 @@ export class Fund extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             #
@@ -89,7 +90,7 @@ export class Fund extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Date
@@ -99,7 +100,7 @@ export class Fund extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Cateogry
@@ -110,7 +111,7 @@ export class Fund extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Note
@@ -120,7 +121,7 @@ export class Fund extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Amount
@@ -130,7 +131,7 @@ export class Fund extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Balance
@@ -161,7 +162,7 @@ export class Fund extends Component {
                                 color: fund.type == "cashIn" ? "red" : "green",
                               }}
                             >
-                              {fund.category}
+                              {showLabel(fund.category)}
                             </td>
                             <td
                               style={{

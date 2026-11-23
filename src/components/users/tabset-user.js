@@ -2,6 +2,7 @@ import React, { Component, Fragment } from "react";
 import { Tabs, TabList, TabPanel, Tab } from "react-tabs";
 
 import { connect } from "react-redux";
+import { coveredIds } from "../../constants/paymentSearch";
 
 export class Tabset_user extends Component {
   toDateTime = (secs) => {
@@ -332,9 +333,7 @@ export class Tabset_user extends Component {
                           {payment.status}
                         </td>
                         <td>
-                          {payment.pendingOrders.map(
-                            (order) => `${order.orderId}, `
-                          )}
+                          {coveredIds(payment).join(", ")}
                         </td>
                       </tr>
                     ))

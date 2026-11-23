@@ -7,7 +7,7 @@ import { getCustomReleasedParcels } from "../../firebase/firebase.utils";
 
 /* Cargo Collection Sheet.
  *
- * Everything at "Custom released" (stored "Bangladesh warehouse") across 1688
+ * Everything at "Custom released" (stored "Bangladesh warehouse") across website orders (1688)
  * orders, product requests and Ship For Me bookings, as one printable sheet an
  * employee takes to the cargo company to collect the cartons. Several orders
  * go on one sheet, grouped By Air / By Sea.
@@ -60,9 +60,9 @@ const kg = (value) => {
 /* One sheet row per order / request / booking */
 const toRow = (kind, record) => {
   const shipment = kind === "Ship For Me";
-  const id = kind === "1688 Order" ? record.orderId : record.bookingId;
+  const id = kind === "Website Order" ? record.orderId : record.bookingId;
   const product =
-    kind === "1688 Order"
+    kind === "Website Order"
       ? (record.items || []).map((item) => item && item.name).filter(Boolean).join("; ")
       : kind === "Product Request"
         ? record.productType
@@ -83,10 +83,37 @@ const toRow = (kind, record) => {
     cartons: parseList(record.ctnNo),
     cnWeight: kg(record.chineseWeight),
     bdWeight: kg(record.bdWeight) || kg(record.receivedWeight),
-    rate: parseList(record.cargoRate).join(", "),
-    bill: parseList(record.shippingChargeCargo).join(", "),
+    /* One entry per carton, in carton order */
+    rates: parseList(record.cargoRate),
+    bills: parseList(record.shippingChargeCargo),
     releasedOn: record["Bangladesh warehouseDate"] || "",
   };
+};
+
+/* "1710 Tk" + "300 Tk" -> 2010; null when nothing parses */
+const sumTk = (bills) => {
+  const nums = bills.map((b) => parseFloat(String(b).replace(/[^0-9.]/g, ""))).filter((n) => Number.isFinite(n));
+  return nums.length ? Math.round(nums.reduce((a, b) => a + b, 0) * 100) / 100 : null;
+};
+
+/* Rate / bill per carton, one per line so they sit beside their carton
+   numbers. Joined on one unbreakable line, a six-carton booking ran past the
+   right edge of the sheet. Several bills get a total underneath. */
+const MoneyLines = ({ items, total }) => {
+  if (!items.length) return "—";
+  const t = total ? sumTk(items) : null;
+  return (
+    <>
+      {items.map((v, i) => (
+        <div key={i}>{v}</div>
+      ))}
+      {total && items.length > 1 && t !== null && (
+        <div style={{ borderTop: "1px dashed #fdba74", marginTop: 2, paddingTop: 2, fontWeight: 800 }}>
+          = {t} Tk
+        </div>
+      )}
+    </>
+  );
 };
 
 const pad = (n) => String(n).padStart(2, "0");
@@ -216,8 +243,16 @@ const CargoSheet = ({ rows, showFinance, sheetNo, cargoLabel, sheetRef }) => {
                   <td style={{ ...td, fontWeight: 700, color: C.ink, whiteSpace: "nowrap" }}>{list(r.cartons)}</td>
                   <td style={{ ...td, whiteSpace: "nowrap" }}>{r.cnWeight ? `${r.cnWeight} kg` : "—"}</td>
                   <td style={{ ...td, whiteSpace: "nowrap" }}>{r.bdWeight ? `${r.bdWeight} kg` : "—"}</td>
-                  {showFinance && <td style={{ ...td, whiteSpace: "nowrap", color: C.brand }}>{r.rate || "—"}</td>}
-                  {showFinance && <td style={{ ...td, whiteSpace: "nowrap", color: C.brand }}>{r.bill || "—"}</td>}
+                  {showFinance && (
+                    <td style={{ ...td, whiteSpace: "nowrap", color: C.brand }}>
+                      <MoneyLines items={r.rates} />
+                    </td>
+                  )}
+                  {showFinance && (
+                    <td style={{ ...td, whiteSpace: "nowrap", color: C.brand }}>
+                      <MoneyLines items={r.bills} total />
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -267,7 +302,7 @@ export class CargoCollection extends Component {
   componentDidMount = async () => {
     const { orders, productRequests, shipments } = await getCustomReleasedParcels();
     const rows = [
-      ...orders.map((r) => toRow("1688 Order", r)),
+      ...orders.map((r) => toRow("Website Order", r)),
       ...productRequests.map((r) => toRow("Product Request", r)),
       ...shipments.map((r) => toRow("Ship For Me", r)),
     ].sort((a, b) => a.cargo.localeCompare(b.cargo) || a.id.localeCompare(b.id));
@@ -288,11 +323,14 @@ export class CargoCollection extends Component {
     );
   };
 
-  /* Ticked rows if any are ticked, otherwise everything the filters show */
+  /* Every ticked row, whatever the search / filters currently show — so an
+     admin can search one customer, tick, search the next, tick, and build a
+     single sheet. With nothing ticked, everything the filters show. */
+  tickedRows = () => this.state.rows.filter((r) => this.state.selected[r.key]);
+
   sheetRows = () => {
-    const visible = this.visibleRows();
-    const ticked = visible.filter((r) => this.state.selected[r.key]);
-    return ticked.length ? ticked : visible;
+    const ticked = this.tickedRows();
+    return ticked.length ? ticked : this.visibleRows();
   };
 
   toggle = (key) =>
@@ -350,8 +388,8 @@ export class CargoCollection extends Component {
     const visible = this.visibleRows();
     const sheetRows = this.sheetRows();
     const cargos = Array.from(new Set(rows.map((r) => r.cargo))).sort();
-    const tickedCount = visible.filter((r) => selected[r.key]).length;
-    const allTicked = visible.length > 0 && tickedCount === visible.length;
+    const tickedCount = this.tickedRows().length;
+    const allTicked = visible.length > 0 && visible.every((r) => selected[r.key]);
     const sheetCargos = Array.from(new Set(sheetRows.map((r) => r.cargo)));
     const cargoLabel = sheetCargos.length === 1 ? sheetCargos[0] : sheetCargos.length ? "Multiple" : "—";
     const input = { padding: "7px 10px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 13 };
@@ -363,7 +401,7 @@ export class CargoCollection extends Component {
           <div className="card" style={{ borderRadius: 14, border: "1px solid #e9eef5" }}>
             <div className="card-body">
               <p style={{ fontSize: 13, color: "#64748b", marginBottom: 14 }}>
-                Every 1688 order, product request and Ship For Me booking at <b>Custom released</b>.
+                Every website order, product request and Ship For Me booking at <b>Custom released</b>.
                 Tick the parcels to collect (or leave all unticked to include everything shown), then
                 print or download the sheet. Cargo rate and bill are shown here only — they never appear
                 on the printed sheet or the PDF.
@@ -391,6 +429,15 @@ export class CargoCollection extends Component {
                 <span style={{ fontSize: 12, color: "#64748b" }}>
                   {loading ? "Loading…" : `${visible.length} shown · ${tickedCount} ticked`}
                 </span>
+                {tickedCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => this.setState({ selected: {} })}
+                    style={{ ...input, background: "#fff", cursor: "pointer", color: "#b91c1c", fontWeight: 600 }}
+                  >
+                    Clear ticks
+                  </button>
+                )}
               </div>
 
               <div style={{ overflowX: "auto", border: "1px solid #eef2f7", borderRadius: 10 }}>
@@ -419,10 +466,16 @@ export class CargoCollection extends Component {
                         <td style={{ maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.product}>
                           {r.product}
                         </td>
-                        <td>{r.cartons.join(", ") || "—"}</td>
+                        <td style={{ whiteSpace: "nowrap" }}>
+                          {r.cartons.length ? r.cartons.map((c, i) => <div key={i}>{c}</div>) : "—"}
+                        </td>
                         <td>{r.bdWeight ? `${r.bdWeight} kg` : "—"}</td>
-                        <td style={{ color: "#FF6A00" }}>{r.rate || "—"}</td>
-                        <td style={{ color: "#FF6A00" }}>{r.bill || "—"}</td>
+                        <td style={{ color: "#FF6A00", whiteSpace: "nowrap" }}>
+                          <MoneyLines items={r.rates} />
+                        </td>
+                        <td style={{ color: "#FF6A00", whiteSpace: "nowrap" }}>
+                          <MoneyLines items={r.bills} total />
+                        </td>
                         <td>{r.releasedOn || "—"}</td>
                       </tr>
                     ))}

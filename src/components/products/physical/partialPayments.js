@@ -170,7 +170,7 @@ export class PartialPayment extends Component {
     renderablePartials = renderablePartials.sort((a, b) => b.id - a.id);
     return (
       <Fragment>
-        <Breadcrumb title={"All Partial Payments"} parent="1688-orders" />
+        <Breadcrumb title={"All Partial Payments"} parent="Website Orders" />
         {/* <!-- Container-fluid starts--> */}
         <div className="container-fluid">
           <div className="row" style={{ justifyContent: "center" }}>
@@ -195,7 +195,7 @@ export class PartialPayment extends Component {
                         style={{
                           fontSize: "130%",
                           marginRight: "5px",
-                          color: "#00254c",
+                          color: "#e05900",
                         }}
                       ></i>
                       Partial Payments (configuration) <br />
@@ -214,7 +214,7 @@ export class PartialPayment extends Component {
                           data-toggle="modal"
                           data-target="#personalInfoModal"
                           style={{
-                            backgroundColor: "rgb(0, 37, 76)",
+                            backgroundColor: "#ff6a00",
                             border: "none",
                             color: "white",
                             fontSize: 11,
@@ -254,7 +254,7 @@ export class PartialPayment extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                               maxWidth: "150px",
                               minWidth: "150px",
                             }}
@@ -266,7 +266,7 @@ export class PartialPayment extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                               maxWidth: "150px",
                               minWidth: "150px",
                             }}
@@ -278,7 +278,7 @@ export class PartialPayment extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                               maxWidth: "150px",
                               minWidth: "150px",
                             }}
@@ -290,7 +290,7 @@ export class PartialPayment extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                               maxWidth: "150px",
                               minWidth: "150px",
                             }}
@@ -303,7 +303,7 @@ export class PartialPayment extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                               maxWidth: "150px",
                               minWidth: "150px",
                             }}
@@ -315,7 +315,7 @@ export class PartialPayment extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                               maxWidth: "150px",
                               minWidth: "150px",
                             }}
@@ -328,7 +328,7 @@ export class PartialPayment extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Expiration Date
@@ -339,7 +339,7 @@ export class PartialPayment extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Action
@@ -440,7 +440,7 @@ export class PartialPayment extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}
@@ -691,7 +691,7 @@ export class PartialPayment extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}

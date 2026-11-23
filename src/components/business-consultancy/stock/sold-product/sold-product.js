@@ -41,7 +41,7 @@ export class StockProduct extends Component {
               <div className="card o-hidden widget-cards">
                 <div
                   className="card-body"
-                  style={{ backgroundColor: "#00254c" }}
+                  style={{ backgroundColor: "#ff6a00" }}
                 >
                   <div className="media static-top-widget row">
                     <div className="icons-widgets col-4">
@@ -86,7 +86,7 @@ export class StockProduct extends Component {
                       style={{
                         fontSize: "130%",
                         marginRight: "5px",
-                        color: "#00254c",
+                        color: "#e05900",
                       }}
                     ></i>
                     Sold Products
@@ -103,7 +103,7 @@ export class StockProduct extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             #
@@ -113,7 +113,7 @@ export class StockProduct extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Date
@@ -123,7 +123,7 @@ export class StockProduct extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Customer
@@ -133,7 +133,7 @@ export class StockProduct extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Image
@@ -143,7 +143,7 @@ export class StockProduct extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Name
@@ -154,7 +154,7 @@ export class StockProduct extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Description
@@ -164,7 +164,7 @@ export class StockProduct extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Quantity
@@ -174,7 +174,7 @@ export class StockProduct extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Amount

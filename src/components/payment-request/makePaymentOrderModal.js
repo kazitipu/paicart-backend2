@@ -17,6 +17,19 @@ import { CircleLoader } from "react-spinners";
 import Currency from "../localization/currency";
 import { sendNotifications } from "../../firebase/fcmRestApi";
 import "./payment-modal.css";
+import "./approvePaymentModal.css";
+import { statusDisplay } from "../../constants/statusDisplay";
+import { MethodLogo } from "../common/paymentModal.jsx";
+
+const STEPS = [
+  "Pending",
+  "Approved",
+  "Abroad warehouse",
+  "Ready to fly",
+  "BD customs",
+  "Paicart warehouse",
+  "Delivered",
+];
 class MakePaymentModal extends Component {
   constructor(props) {
     super(props);
@@ -177,7 +190,7 @@ class MakePaymentModal extends Component {
           (order.discount ? parseInt(order.discount) : 0);
     } else {
       totalBill = order.orderTotal
-        ? order.orderTotal +
+        ? parseInt(order.orderTotal) +
           (order.localShipping ? parseInt(order.localShipping) : 0) +
           (order.otherCost ? parseInt(order.otherCost) : 0) -
           (order.discount ? parseInt(order.discount) : 0)
@@ -190,1640 +203,421 @@ class MakePaymentModal extends Component {
     return totalDue;
   };
 
-  render = () => {
-    const { payableOrders, currency, paymentRequestObj } = this.props;
-    console.log(paymentRequestObj);
+  componentDidUpdate(prevProps) {
+    /* A fresh request must be confirmed again — the tick used to carry over
+       from the previous payment that was opened. */
+    if (prevProps.paymentRequestObj !== this.props.paymentRequestObj) {
+      if (this.state.termsAndCondition) this.setState({ termsAndCondition: false });
+    }
+  }
 
-    console.log(payableOrders);
-    let total = 0;
+  /* Play the closing animation, then close for real. */
+  close = () => {
+    if (this.state.loader || this.state.closing) return;
+    this.setState({ closing: true });
+    setTimeout(() => {
+      this.setState({ termsAndCondition: false, closing: false });
+      this.props.startToggleModal(null, []);
+    }, 200);
+  };
 
-    payableOrders.forEach((order) => {
-      return (total += order.orderTotal);
-    });
+  /* Everything the item card needs, for a product-request booking or a 1688
+     order, in one shape. Totals come from the same getTotalDue helpers the
+     old layout used. */
+  describeItem = (item, isProductRequest) => {
+    const num = (v) => parseInt(v) || 0;
+    const productPrice = item.actualTotal
+      ? num(item.actualTotal)
+      : item.items
+        ? this.getSingleShopTotal(item)
+        : 0;
+    const hasShipping =
+      !!item.shippingChargeCustomer && item.shippingChargeCustomer != 0;
+    const paid = isProductRequest
+      ? this.getTotalPaid2(item)
+      : this.getTotalPaid(item);
+    const due = isProductRequest
+      ? this.getTotalDue2(item)
+      : this.getTotalDue(item);
 
-    console.log(total);
-    return (
-      <>
-        <div
-          className={
-            this.props.toggleModal
-              ? "modal fade show"
-              : "modal fade show visible-modal"
-          }
-          id="request_make_payment_popup"
-          tabIndex="-1"
-          role="dialog"
-          aria-hidden="true"
-        >
+    const lines = [
+      { label: "Product price", value: productPrice },
+      { label: "Coupon", value: num(item.couponAmount), sign: "-" },
+      {
+        label: "Discount (pay now %)",
+        value: item.offer && item.offer != 0 ? num(getOfferDiscount(item)) : 0,
+        sign: "-",
+      },
+      { label: "China local courier", value: num(item.localShipping), sign: "+" },
+      { label: "Packaging & other cost", value: num(item.otherCost), sign: "+" },
+      {
+        label: "Shipping charge (CN → BD)",
+        value: num(item.shippingChargeCustomer),
+        sign: "+",
+      },
+      { label: "Discount (on shipping)", value: num(item.discount), sign: "-" },
+    ].filter((l, i) => i === 0 || l.value);
+
+    const rate = item.customerRate
+      ? `${item.customerRate} ৳/kg`
+      : item.shippingRate
+        ? `${item.shippingRate} ৳/kg`
+        : null;
+
+    return {
+      id: isProductRequest ? item.bookingId : item.orderId || item.bookingId,
+      idLabel: isProductRequest ? "Booking" : "Order",
+      date: isProductRequest ? item.date : item.orderedDate || item.date,
+      status: isProductRequest ? item.orderStatus : item.orderStatus || item.status,
+      rejected: isProductRequest
+        ? item.orderStatus === "Reject"
+        : item.status === "Reject",
+      paymentStatus: item.paymentStatus,
+      trackingNo: item.trackingNo,
+      hasShipping,
+      lines,
+      paid,
+      due,
+      bill: due + paid,
+      facts: [
+        hasShipping && item.receivedWeight
+          ? ["Received weight", `${item.receivedWeight} kg`]
+          : null,
+        ["Customs & shipping rate", rate || "Not given yet"],
+        isProductRequest && item.store ? ["Store", item.store] : null,
+        item.refund && item.refund != 0 ? ["Refunded", `৳${item.refund}`] : null,
+      ].filter(Boolean),
+      score: parseInt(item.shipmentStatusScore) || 0,
+    };
+  };
+
+  renderProducts = (item, isProductRequest) => {
+    if (isProductRequest) {
+      return (
+        <div className="ap-product">
           <div
-            className="modal-dialog modal-dialog-centered request_popup"
-            role="document"
-          >
-            <div
-              className="modal-content login-modal order-details-modal-container"
-              style={{ backgroundColor: "white" }}
-            >
-              <div className="modal-body p-0">
-                <section className="pos-rel bg-light-gray">
-                  <div className="container-fluid p-3 order-details-main-container">
-                    <a
-                      id="modal-close-icon-payment-modal"
-                      onClick={() => this.props.startToggleModal(null, [])}
-                      className="close"
-                      data-dismiss="modal"
-                      aria-label="Close"
-                    >
-                      <i
-                        className="icofont-close-line"
-                        style={{ color: "black", fontWeight: "bolder" }}
-                      ></i>
-                    </a>
-                    <div className="d-lg-flex justify-content-end no-gutters mb-spacer-md">
-                      <div className="col">
-                        <div className="order-details-container">
-                          <h2 className="h2-xl mb-2 fw-6 pb-2 order-details-header">
-                            Order Details
-                          </h2>
-                          <div style={{ marginTop: "20px" }}></div>
+            className="ap-thumb"
+            style={{ backgroundImage: `url(${item.imageUrl || ""})` }}
+          />
+          <div className="ap-product-main">
+            <div className="ap-product-name">
+              {item.productType || item.othersProductName || "Product"}
+            </div>
+            {item.productVariant && (
+              <div className="ap-product-variant">{item.productVariant}</div>
+            )}
+          </div>
+          <div className="ap-product-price">
+            {item.unitPrice ? (
+              <b>৳{item.unitPrice}</b>
+            ) : (
+              <span className="ap-muted">Unit price not set</span>
+            )}
+            <span className="ap-qty">× {item.productQuantity || 0}</span>
+          </div>
+        </div>
+      );
+    }
+    return (item.items || []).map((product, pi) =>
+      (product.skus || []).map((sku, si) => (
+        <div className="ap-product" key={`${pi}-${si}`}>
+          <div
+            className="ap-thumb"
+            style={{ backgroundImage: `url(${sku.image || product.picture || ""})` }}
+          />
+          <div className="ap-product-main">
+            <div className="ap-product-name" title={product.name}>
+              {product.name}
+            </div>
+            <div className="ap-product-variant">
+              {product.propertyNames && product.propertyNames.length > 0 && (
+                <>
+                  {product.propertyNames[0]}: {sku.color}
+                  {sku.size && product.propertyNames[1]
+                    ? ` · ${product.propertyNames[1]}: ${sku.size}`
+                    : ""}
+                </>
+              )}
+            </div>
+          </div>
+          <div className="ap-product-price">
+            <b>৳{parseInt(parseFloat(sku.price)) || 0}</b>
+            <span className="ap-qty">× {sku.totalQuantity}</span>
+          </div>
+        </div>
+      ))
+    );
+  };
 
-                          {paymentRequestObj && paymentRequestObj.productRequest
-                            ? payableOrders.length > 0 &&
-                              payableOrders.map((booking) => {
-                                return (
-                                  <>
-                                    <div>
-                                      <div className="each-order-container-1">
-                                        <div
-                                          className="order-header-1"
-                                          style={{
-                                            borderBottom: "1px solid gainsboro",
-                                          }}
-                                        >
-                                          <div style={{ fontSize: 12 }}>
-                                            Booking Id: {booking.bookingId}{" "}
-                                            <br />
-                                            <span
-                                              style={{
-                                                fontSize: 11,
-                                                color: "gray",
-                                              }}
-                                            >
-                                              Tracking no:{" "}
-                                              {booking.trackingNo ||
-                                                "Not given yet"}
-                                            </span>{" "}
-                                          </div>
-                                        </div>
-                                      </div>
-                                      <div
-                                        className="products-box"
-                                        style={{
-                                          borderBottomLeftRadius: 10,
-                                          borderBottomRightRadius: 10,
-                                        }}
-                                      >
-                                        <div>
-                                          <div
-                                            className="row"
-                                            style={{ marginTop: 10 }}
-                                          >
-                                            <div>
-                                              <div
-                                                style={{
-                                                  minHeight: 60,
-                                                  minWidth: 60,
-                                                  maxHeight: 60,
-                                                  maxWidth: 60,
-                                                  overflow: "hidden",
-                                                  backgroundImage: `url(${booking.imageUrl})`,
-                                                  backgroundPosition: "center",
-                                                  backgroundSize: "cover",
-                                                  backgroundRepeat: "no-repeat",
-                                                  border: "1px solid gainsboro",
-                                                  borderRadius: 5,
-                                                }}
-                                              />
-                                            </div>
-                                            <div
-                                              className="col"
-                                              style={{
-                                                padding: "0px 10px",
-                                                paddingLeft: 20,
-                                              }}
-                                            >
-                                              <div
-                                                style={{
-                                                  color: "#4a4a4a",
-                                                  fontSize: 8,
-                                                }}
-                                              >
-                                                <div
-                                                  style={{
-                                                    color: "gray",
-                                                    fontSize: 10,
-                                                  }}
-                                                >
-                                                  Date:{" "}
-                                                  <span
-                                                    style={{
-                                                      fontWeight: "bold",
-                                                    }}
-                                                  >
-                                                    {booking.date}
-                                                  </span>
-                                                </div>
-                                                <div
-                                                  style={{
-                                                    color: "gray",
-                                                    fontSize: 10,
-                                                  }}
-                                                >
-                                                  Store: {booking.store}
-                                                </div>
-                                                <div
-                                                  style={{
-                                                    color: "gray",
-                                                    fontSize: 10,
-                                                  }}
-                                                >
-                                                  Product type:{" "}
-                                                  {booking.productType}
-                                                </div>
-                                                <div
-                                                  style={{
-                                                    color: "gray",
-                                                    fontSize: 10,
-                                                  }}
-                                                >
-                                                  Shipping Rate:{" "}
-                                                  {booking.customerRate
-                                                    ? `${booking.customerRate}tk/kg`
-                                                    : booking.shippingRate
-                                                    ? `${booking.shippingRate}tk/kg`
-                                                    : "Not given yet"}
-                                                </div>
-                                                <div
-                                                  style={{
-                                                    color: "gray",
-                                                    fontSize: 10,
-                                                    marginTop: 20,
-                                                  }}
-                                                >
-                                                  {booking.productVariant}{" "}
-                                                </div>
-                                              </div>
-                                            </div>
-                                            <div
-                                              style={{
-                                                display: "flex",
-                                                flexDirection: "column",
-                                                textAlign: "end",
-                                              }}
-                                              className="col-3"
-                                            >
-                                              <div
-                                                style={{
-                                                  color: "rgb(98 98 98)",
-                                                  fontSize: 11,
-                                                }}
-                                              >
-                                                {booking.unitPrice ? (
-                                                  `${booking.unitPrice}Tk`
-                                                ) : (
-                                                  <div
-                                                    style={{
-                                                      color: "gray",
-                                                      fontSize: 10,
-                                                      fontWeight: "lighter",
-                                                    }}
-                                                  >
-                                                    unit Price: not given yet
-                                                  </div>
-                                                )}
-                                              </div>
-                                              <div
-                                                style={{
-                                                  color: "gray",
-                                                  fontSize: 11,
-                                                  marginLeft: 10,
-                                                }}
-                                              >
-                                                X{booking.productQuantity}
-                                              </div>
-                                            </div>
-                                          </div>
-                                        </div>
-                                        <div
-                                          style={{
-                                            display: "flex",
-                                            flexDirection: "row",
-                                            justifyContent: "space-between",
-                                            marginBottom: 5,
-                                            marginTop: 10,
-                                          }}
-                                        >
-                                          <div>
-                                            <div
-                                              style={{
-                                                color: "gray",
-                                                fontSize: 11,
-                                              }}
-                                            >
-                                              Order status:{" "}
-                                              <span
-                                                style={{
-                                                  color: "#ff8084",
-                                                  fontWeight: "bold",
-                                                  fontSize: 10,
-                                                }}
-                                              >
-                                                {booking.orderStatus ==
-                                                "Bangladesh warehouse"
-                                                  ? "Custom released"
-                                                  : booking.orderStatus}
-                                              </span>{" "}
-                                              <br />
-                                            </div>
-                                            <div
-                                              style={{
-                                                color: "gray",
-                                                fontSize: 11,
-                                              }}
-                                            >
-                                              Payment Status:{" "}
-                                              {booking.paymentStatus ==
-                                                "Paid" ||
-                                              booking.paymentStatus ==
-                                                "Partially Paid" ||
-                                              !booking.paymentStatus ? (
-                                                <div
-                                                  style={{
-                                                    color: "white",
-                                                    background:
-                                                      booking.paymentStatus ==
-                                                      "Paid"
-                                                        ? "darkgreen"
-                                                        : booking.paymentStatus ==
-                                                          "Partially Paid"
-                                                        ? "darkorange"
-                                                        : !booking.paymentStatus
-                                                        ? "#596fa8"
-                                                        : "white",
-                                                    border:
-                                                      "1px solid gainsboro",
-                                                    borderRadius: 5,
-                                                    padding: "1px 5px",
-                                                    display: "inline",
-                                                    fontSize: 7,
-                                                    marginTop: 5,
-                                                    fontWeight: "bold",
-                                                  }}
-                                                >
-                                                  {booking.paymentStatus ==
-                                                  "Paid"
-                                                    ? "Paid"
-                                                    : booking.paymentStatus ==
-                                                      "Partially Paid"
-                                                    ? "Partially Paid"
-                                                    : !booking.paymentStatus
-                                                    ? "Not Paid"
-                                                    : "Not Paid"}
-                                                </div>
-                                              ) : (
-                                                <span
-                                                  style={{
-                                                    position: "relative",
-                                                  }}
-                                                >
-                                                  <div
-                                                    style={{
-                                                      color: "white",
-                                                      background: "#da62da",
-                                                      border:
-                                                        "1px solid gainsboro",
-                                                      borderRadius: 5,
-                                                      padding: "1px 5px",
-                                                      display: "inline",
-                                                      fontSize: 7,
-                                                      marginTop: 5,
-                                                      fontWeight: "bold",
-                                                    }}
-                                                    className="myDIV"
-                                                  >
-                                                    {booking.paymentStatus}
-                                                  </div>
-                                                </span>
-                                              )}
-                                            </div>
+  render = () => {
+    const { payableOrders = [], paymentRequestObj, toggleModal } = this.props;
+    if (toggleModal || !paymentRequestObj) return null;
 
-                                            {booking.shippingChargeCustomer &&
-                                            booking.shippingChargeCustomer !==
-                                              0 ? (
-                                              <>
-                                                <div
-                                                  style={{
-                                                    color: "gray",
-                                                    fontSize: 11,
-                                                  }}
-                                                >
-                                                  Total weight:{" "}
-                                                  <span
-                                                    style={{
-                                                      fontWeight: "bold",
-                                                      color: "#444",
-                                                    }}
-                                                  >
-                                                    {booking.receivedWeight} kg
-                                                  </span>
-                                                </div>
-                                                <div
-                                                  style={{
-                                                    color: "gray",
-                                                    fontSize: 11,
-                                                  }}
-                                                >
-                                                  Customs & Shippping rate:{" "}
-                                                  <span
-                                                    style={{
-                                                      fontWeight: "bold",
-                                                      color: "#444",
-                                                    }}
-                                                  >
-                                                    {booking.customerRate} tk/kg
-                                                  </span>
-                                                </div>
-                                                <div
-                                                  style={{
-                                                    color: "gray",
-                                                    fontSize: 11,
-                                                  }}
-                                                >
-                                                  Total Shipping charge (CN to
-                                                  BD):{" "}
-                                                  <span
-                                                    style={{
-                                                      fontWeight: "bold",
-                                                      color: "#444",
-                                                    }}
-                                                  >
-                                                    +
-                                                    {
-                                                      booking.shippingChargeCustomer
-                                                    }{" "}
-                                                    Tk
-                                                  </span>
-                                                </div>
-                                                <div
-                                                  style={{
-                                                    color: "gray",
-                                                    fontSize: 11,
-                                                  }}
-                                                >
-                                                  China local courier charge:{" "}
-                                                  <span
-                                                    style={{
-                                                      fontWeight: "bold",
-                                                      color: "#444",
-                                                    }}
-                                                  >
-                                                    +{booking.localShipping} Tk
-                                                  </span>
-                                                </div>
-                                                {booking.otherCost && (
-                                                  <div
-                                                    style={{
-                                                      color: "gray",
-                                                      fontSize: 11,
-                                                    }}
-                                                  >
-                                                    Other Cost:{" "}
-                                                    <span
-                                                      style={{
-                                                        fontWeight: "bold",
-                                                        color: "#444",
-                                                      }}
-                                                    >
-                                                      +{booking.otherCost} Tk
-                                                    </span>
-                                                  </div>
-                                                )}
-                                                {booking.discount && (
-                                                  <div
-                                                    style={{
-                                                      color: "gray",
-                                                      fontSize: 11,
-                                                    }}
-                                                  >
-                                                    Discount:{" "}
-                                                    <span
-                                                      style={{
-                                                        fontWeight: "bold",
-                                                        color: "#444",
-                                                      }}
-                                                    >
-                                                      -{booking.discount} Tk
-                                                    </span>
-                                                  </div>
-                                                )}
-                                                <div
-                                                  style={{
-                                                    color: "gray",
-                                                    fontSize: 11,
-                                                  }}
-                                                >
-                                                  Product Price:{" "}
-                                                  <span
-                                                    style={{
-                                                      fontWeight: "bold",
-                                                      color: "#444",
-                                                    }}
-                                                  >
-                                                    +
-                                                    {booking.actualTotal
-                                                      ? booking.actualTotal
-                                                      : this.getSingleShopTotal(
-                                                          booking
-                                                        )}
-                                                    Tk
-                                                  </span>
-                                                </div>
-                                                <div
-                                                  style={{
-                                                    fontWeight: "bold",
-                                                    fontSize: 16,
-                                                    marginTop: 20,
-                                                  }}
-                                                >
-                                                  {booking.actualTotal
-                                                    ? parseInt(
-                                                        booking.actualTotal
-                                                      ) +
-                                                      parseInt(
-                                                        booking.shippingChargeCustomer
-                                                      ) +
-                                                      parseInt(
-                                                        booking.localShipping
-                                                      ) +
-                                                      parseInt(
-                                                        booking.otherCost
-                                                          ? booking.otherCost
-                                                          : 0
-                                                      ) -
-                                                      parseInt(
-                                                        booking.discount
-                                                          ? booking.discount
-                                                          : 0
-                                                      )
-                                                    : this.getSingleShopTotal(
-                                                        booking
-                                                      ) +
-                                                      parseInt(
-                                                        booking.shippingChargeCustomer
-                                                      ) +
-                                                      parseInt(
-                                                        booking.localShipping
-                                                      ) +
-                                                      parseInt(
-                                                        booking.otherCost
-                                                          ? booking.otherCost
-                                                          : 0
-                                                      ) -
-                                                      parseInt(
-                                                        booking.discount
-                                                          ? booking.discount
-                                                          : 0
-                                                      )}
-                                                  Tk
-                                                  <div
-                                                    style={{
-                                                      fontSize: 10,
-                                                      color: "gray",
-                                                      fontWeight: "lighter",
-                                                      marginTop: -3,
-                                                    }}
-                                                  >
-                                                    including shipping charge
-                                                  </div>
-                                                </div>
-                                              </>
-                                            ) : (
-                                              <>
-                                                <div
-                                                  style={{
-                                                    color: "gray",
-                                                    fontSize: 11,
-                                                  }}
-                                                >
-                                                  China local courier charge:{" "}
-                                                  <span
-                                                    style={{
-                                                      fontWeight: "bold",
-                                                      color: "#444",
-                                                      fontSize: 10,
-                                                    }}
-                                                  >
-                                                    {booking.localShipping
-                                                      ? `${booking.localShipping}Tk`
-                                                      : "Not given yet"}
-                                                  </span>
-                                                </div>
-                                                <div
-                                                  style={{
-                                                    color: "gray",
-                                                    fontSize: 11,
-                                                  }}
-                                                >
-                                                  Customs & Shippping rate:{" "}
-                                                  <span
-                                                    style={{
-                                                      fontWeight: "bold",
-                                                      color: "#444",
-                                                      fontSize: 10,
-                                                    }}
-                                                  >
-                                                    {booking.customerRate
-                                                      ? `${booking.customerRate}tk/kg`
-                                                      : "Not given yet"}
-                                                  </span>
-                                                </div>
-                                                <div
-                                                  style={{
-                                                    color: "gray",
-                                                    fontSize: 11,
-                                                  }}
-                                                >
-                                                  Product Price:{" "}
-                                                  <span
-                                                    style={{
-                                                      fontWeight: "bold",
-                                                      color: "#444",
-                                                    }}
-                                                  >
-                                                    {booking.actualTotal
-                                                      ? booking.actualTotal
-                                                      : this.getSingleShopTotal(
-                                                          booking
-                                                        )}
-                                                    Tk
-                                                  </span>
-                                                </div>
-                                                <div
-                                                  style={{
-                                                    fontWeight: "bold",
-                                                    fontSize: 16,
-                                                    marginTop: 20,
-                                                  }}
-                                                >
-                                                  {booking.actualTotal
-                                                    ? `${booking.actualTotal}Tk`
-                                                    : this.getSingleShopTotal(
-                                                        booking
-                                                      ) > 0
-                                                    ? `${this.getSingleShopTotal(
-                                                        booking
-                                                      )} Tk`
-                                                    : "Not given yet"}
+    const isProductRequest = !!paymentRequestObj.productRequest;
+    const items = payableOrders.map((o) => ({
+      raw: o,
+      ...this.describeItem(o, isProductRequest),
+    }));
+    const amount =
+      parseInt(paymentRequestObj.amount || paymentRequestObj.payableTotal) || 0;
+    const combinedDue = items.reduce((s, i) => s + Math.max(i.due, 0), 0);
+    const remaining = combinedDue - amount;
+    const tk = (v) => `৳${(parseInt(v) || 0).toLocaleString("en-IN")}`;
 
-                                                  <div
-                                                    style={{
-                                                      fontSize: 10,
-                                                      color: "gray",
-                                                      fontWeight: "lighter",
-                                                      marginTop: -3,
-                                                    }}
-                                                  >
-                                                    excluding shipping charge
-                                                  </div>
-                                                </div>
-                                              </>
-                                            )}
-                                          </div>
-                                          <div>
-                                            <div
-                                              style={{
-                                                color: "gray",
-                                                fontSize: 11,
-                                              }}
-                                            >
-                                              Total Paid{" "}
-                                              <span
-                                                style={{
-                                                  fontWeight: "bold",
-                                                  color: "#444",
-                                                }}
-                                              >
-                                                Tk {this.getTotalPaid2(booking)}
-                                              </span>
-                                            </div>
-                                            {booking.couponAmount &&
-                                            booking.couponAmount !== 0 ? (
-                                              <div
-                                                style={{
-                                                  color: "gray",
-                                                  fontSize: 11,
-                                                }}
-                                              >
-                                                Coupon{" "}
-                                                <span
-                                                  style={{
-                                                    fontWeight: "bold",
-                                                    color: "#444",
-                                                  }}
-                                                >
-                                                  Tk {booking.couponAmount}
-                                                </span>
-                                              </div>
-                                            ) : null}
-                                            {booking.offer &&
-                                            booking.offer !== 0 ? (
-                                              <div
-                                                style={{
-                                                  color: "gray",
-                                                  fontSize: 11,
-                                                }}
-                                              >
-                                                Discount{" "}
-                                                <span
-                                                  style={{
-                                                    fontWeight: "bold",
-                                                    color: "#444",
-                                                  }}
-                                                >
-                                                  Tk{" "}
-                                                  {getOfferDiscount(booking)}
-                                                </span>
-                                              </div>
-                                            ) : null}
-                                            <div
-                                              style={{
-                                                color: "gray",
-                                                fontSize: 11,
-                                              }}
-                                            >
-                                              Total Due{" "}
-                                              <span
-                                                style={{
-                                                  color: "#ff8084",
-                                                  fontWeight: "bold",
-                                                }}
-                                              >
-                                                Tk {this.getTotalDue2(booking)}
-                                              </span>
-                                            </div>
+    return (
+      <div className={`ap-overlay ${this.state.closing ? "is-closing" : ""}`} role="dialog" aria-modal="true">
+        <div className="ap-modal">
+          {/* Header */}
+          <div className="ap-head">
+            <div className="ap-head-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 12l2 2 4-4" />
+                <path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z" />
+              </svg>
+            </div>
+            <div className="ap-head-text">
+              <h4 className="ap-title">Review &amp; Approve Payment</h4>
+              <div className="ap-sub">
+                Payment ID <b>#{paymentRequestObj.paymentId}</b>
+              </div>
+              <div className="ap-chips">
+                <span className="ap-chip">
+                  {isProductRequest ? "Product Request" : "Website Order"}
+                </span>
+                {paymentRequestObj.displayName && (
+                  <span className="ap-chip">👤 {paymentRequestObj.displayName}</span>
+                )}
+                {paymentRequestObj.date && (
+                  <span className="ap-chip">📅 {paymentRequestObj.date}</span>
+                )}
+                <span className="ap-chip">
+                  {items.length} {isProductRequest ? "booking" : "order"}
+                  {items.length === 1 ? "" : "s"}
+                </span>
+              </div>
+            </div>
+            <button type="button" className="ap-x" onClick={this.close} aria-label="Close">
+              &times;
+            </button>
+          </div>
 
-                                            <div>
-                                              {booking.refund &&
-                                              booking.refund != 0 ? (
-                                                <div
-                                                  style={{
-                                                    color: "gray",
-                                                    fontSize: 11,
-                                                    marginLeft: 3,
-                                                  }}
-                                                >
-                                                  Refunded amount: <br />
-                                                  <span
-                                                    style={{
-                                                      fontWeight: "bold",
-                                                      fontSize: 10,
-                                                      color: "#555",
-                                                    }}
-                                                  >
-                                                    {booking.refund}Tk
-                                                  </span>
-                                                </div>
-                                              ) : null}
-                                            </div>
-                                          </div>
-                                        </div>
-                                        {booking.orderStatus !== "Reject" && (
-                                          <div
-                                            className="row"
-                                            style={{
-                                              margin: 0,
-                                              marginBottom: 20,
-                                              marginTop: 30,
-                                            }}
-                                          >
-                                            <div
-                                              className={`col ${
-                                                booking.shipmentStatusScore >= 1
-                                                  ? "each-progress-3"
-                                                  : "each-progress-4"
-                                              }`}
-                                            >
-                                              <i className="icofont-paper" />
-                                              <span>Pending</span>
-                                            </div>
-                                            <div
-                                              className={`col ${
-                                                booking.shipmentStatusScore >= 2
-                                                  ? "each-progress-3"
-                                                  : "each-progress-4"
-                                              }`}
-                                            >
-                                              <i className="icofont-tick-boxed" />
-                                              <span>Approved</span>
-                                            </div>
-                                            <div
-                                              className={`col ${
-                                                booking.shipmentStatusScore >= 3
-                                                  ? "each-progress-3"
-                                                  : "each-progress-4"
-                                              }`}
-                                            >
-                                              <i className="icofont-building-alt" />
-                                              <span>Abroad</span>
-                                              <br />
-                                              <span style={{ top: "-10px" }}>
-                                                Warehouse
-                                              </span>
-                                            </div>
-                                            <div
-                                              className={`col ${
-                                                booking.shipmentStatusScore >= 4
-                                                  ? "each-progress-3"
-                                                  : "each-progress-4"
-                                              }`}
-                                            >
-                                              <i className="icofont-airplane-alt" />
-                                              <span style={{ left: "-15px" }}>
-                                                Ready{" "}
-                                              </span>
-                                              <br />
-                                              <span
-                                                style={{
-                                                  top: "-10px",
-                                                  left: "-15px",
-                                                }}
-                                              >
-                                                fly
-                                              </span>
-                                            </div>
-                                            <div
-                                              className={`col ${
-                                                booking.shipmentStatusScore >= 5
-                                                  ? "each-progress-3"
-                                                  : "each-progress-4"
-                                              }`}
-                                            >
-                                              <i className="icofont-shield-alt" />
-                                              <span>Bangladesh</span>
-                                              <br />
-                                              <span style={{ top: "-10px" }}>
-                                                {" "}
-                                                customs
-                                              </span>
-                                            </div>
-                                            <div
-                                              className={`col ${
-                                                booking.shipmentStatusScore >= 6
-                                                  ? "each-progress-3"
-                                                  : "each-progress-4"
-                                              }`}
-                                            >
-                                              <i className="icofont-castle" />
-                                              <span>Paicart</span>
-                                              <br />
-                                              <span style={{ top: "-10px" }}>
-                                                {" "}
-                                                warehouse
-                                              </span>
-                                            </div>
-                                            <div
-                                              className={`col ${
-                                                booking.shipmentStatusScore >= 7
-                                                  ? "last-progress-3"
-                                                  : "last-progress-4"
-                                              }`}
-                                            >
-                                              <i className="icofont-tick-mark" />
-                                              <span>Delivered</span>
-                                            </div>
-                                          </div>
-                                        )}
-                                        <div
-                                          style={{
-                                            color:
-                                              booking.shippingChargeCustomer &&
-                                              booking.shippingChargeCustomer !==
-                                                0
-                                                ? "green"
-                                                : "#ff8084",
-                                            fontSize: 10,
-                                            marginTop: 10,
-                                          }}
-                                        >
-                                          {booking.shippingChargeCustomer &&
-                                          booking.shippingChargeCustomer !== 0
-                                            ? "***China to Bangladesh customs & shipping charge included."
-                                            : "***China to Bangladesh customs & shipping charge will be included later."}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </>
-                                );
-                              })
-                            : payableOrders.length > 0 &&
-                              payableOrders.map((order) => (
-                                <div>
-                                  <div className="each-order-container-1">
-                                    <div
-                                      className="order-header-1"
-                                      style={{
-                                        borderBottom: "1px solid gainsboro",
-                                      }}
-                                    >
-                                      <div
-                                        style={{
-                                          fontSize: 12,
-                                          fontWeight: "bold",
-                                        }}
-                                      >
-                                        Order Id:{" "}
-                                        {order.orderId || order.bookingId}{" "}
-                                        <div style={{ fontSize: 10 }}>
-                                          Tracking No:
-                                          {order.trackingNo || "Not given yet"}
-                                        </div>
-                                      </div>
+          <div className="ap-body">
+            {/* Payment proof + summary */}
+            <div className="ap-top">
+              <div className="ap-card ap-proof">
+                <div className="ap-card-title">Payment proof</div>
+                {paymentRequestObj.imageUrl ? (
+                  <a
+                    href={paymentRequestObj.imageUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ap-proof-img"
+                    title="Open full screenshot"
+                  >
+                    <img src={paymentRequestObj.imageUrl} alt="Payment screenshot" />
+                    <span className="ap-proof-open">Open full size ↗</span>
+                  </a>
+                ) : (
+                  <div className="ap-proof-empty">
+                    No screenshot attached
+                    {paymentRequestObj.method === "Bkash" ? " (bKash gateway)" : ""}
+                  </div>
+                )}
+                <div className="ap-proof-meta">
+                  <MethodLogo method={paymentRequestObj.method} className="ap-method-logo" />
+                  <div>
+                    <div className="ap-proof-method">
+                      {paymentRequestObj.method || "—"}
+                    </div>
+                    {paymentRequestObj.trxID && (
+                      <div className="ap-muted">TrxID: {paymentRequestObj.trxID}</div>
+                    )}
+                  </div>
+                </div>
+              </div>
 
-                                      <div></div>
-                                    </div>
-                                  </div>
-                                  <div
-                                    className="products-box"
-                                    style={{
-                                      borderBottomLeftRadius: 10,
-                                      borderBottomRightRadius: 10,
-                                    }}
-                                  >
-                                    {order && order.items && (
-                                      <div>
-                                        {order.items.map((item) =>
-                                          item.skus.map((sku, index) => (
-                                            <div
-                                              style={{
-                                                padding: 5,
-                                                paddingBottom: 10,
-                                                display: "flex",
-                                                flexDirection: "row",
-                                                justifyContent: "space-between",
-                                                borderBottom:
-                                                  index + 1 == item.skus.length
-                                                    ? "none"
-                                                    : "1px solid gainsboro",
-                                              }}
-                                              key={index}
-                                            >
-                                              <div
-                                                style={{
-                                                  display: "flex",
-                                                  flexDirection: "row",
-                                                  justifyContent: "flex-start",
-                                                  marginLeft: 5,
-                                                }}
-                                              >
-                                                <div
-                                                  style={{
-                                                    minHeight: 60,
-                                                    minWidth: 60,
-                                                    maxHeight: 60,
-                                                    maxWidth: 60,
-                                                    overflow: "hidden",
-                                                    backgroundImage: `url(${
-                                                      sku.image
-                                                        ? sku.image
-                                                        : item.picture
-                                                    })`,
-                                                    backgroundPosition:
-                                                      "center",
-                                                    backgroundSize: "cover",
-                                                    backgroundRepeat:
-                                                      "no-repeat",
-                                                    border:
-                                                      "1px solid gainsboro",
-                                                    borderRadius: 5,
-                                                  }}
-                                                />
-                                                <div
-                                                  style={{
-                                                    padding: "0px 10px",
-                                                  }}
-                                                >
-                                                  <div
-                                                    style={{
-                                                      color: "#222",
-                                                      fontSize: 13,
-                                                    }}
-                                                  >
-                                                    {item.name &&
-                                                      item.name.slice(0, 20)}
-                                                    ...
-                                                  </div>
-                                                  <div
-                                                    style={{
-                                                      color: "gray",
-                                                      fontSize: 10,
-                                                    }}
-                                                  >
-                                                    Product type:{" "}
-                                                    {item.productType}
-                                                  </div>
-                                                  <div
-                                                    style={{
-                                                      color: "gray",
-                                                      fontSize: 10,
-                                                    }}
-                                                  >
-                                                    Shipping Rate:{" "}
-                                                    {order.customerRate
-                                                      ? `${order.customerRate}tk/kg`
-                                                      : item.shippingRate
-                                                      ? `${item.shippingRate}tk/kg`
-                                                      : "Not given yet"}
-                                                  </div>
-                                                  {item.propertyNames &&
-                                                    item.propertyNames.length >
-                                                      0 && (
-                                                      <div
-                                                        style={{
-                                                          color: "gray",
-                                                          fontSize: 10,
-                                                        }}
-                                                      >
-                                                        {item.propertyNames[0]}:{" "}
-                                                        {sku.color}
-                                                        , <br />
-                                                        {sku.size &&
-                                                          `${item.propertyNames[1]}: ${sku.size}`}
-                                                      </div>
-                                                    )}
-                                                </div>
-                                              </div>
+              <div className="ap-card ap-summary">
+                <div className="ap-card-title">Payment summary</div>
+                <div className="ap-amount">
+                  <span className="ap-amount-label">Amount submitted</span>
+                  <span className="ap-amount-value">{tk(amount)}</span>
+                </div>
+                <div className="ap-sum-rows">
+                  <div className="ap-sum-row">
+                    <span>Current due ({items.length} item{items.length === 1 ? "" : "s"})</span>
+                    <b>{tk(combinedDue)}</b>
+                  </div>
+                  <div className="ap-sum-row">
+                    <span>This payment</span>
+                    <b className="ap-green">− {tk(amount)}</b>
+                  </div>
+                  <div className="ap-sum-row ap-sum-total">
+                    <span>
+                      {remaining > 0 ? "Due after approval" : remaining < 0 ? "Overpaid by" : "Due after approval"}
+                    </span>
+                    <b className={remaining > 0 ? "ap-orange" : remaining < 0 ? "ap-red" : "ap-green"}>
+                      {tk(Math.abs(remaining))}
+                    </b>
+                  </div>
+                </div>
+                {remaining < 0 ? (
+                  <div className="ap-alert ap-alert-red">
+                    The amount is more than the current due. Double-check before approving.
+                  </div>
+                ) : remaining === 0 ? (
+                  <div className="ap-alert ap-alert-green">
+                    This payment clears the full due.
+                  </div>
+                ) : (
+                  <div className="ap-alert ap-alert-orange">
+                    Partial payment: {tk(remaining)} will still be due.
+                  </div>
+                )}
+              </div>
+            </div>
 
-                                              <div
-                                                style={{
-                                                  display: "flex",
-                                                  flexDirection: "column",
-                                                }}
-                                              >
-                                                <div
-                                                  style={{
-                                                    color: "rgb(98 98 98)",
-                                                    fontSize: 12,
-                                                  }}
-                                                >
-                                                  Tk{" "}
-                                                  {parseInt(
-                                                    parseFloat(sku.price)
-                                                  )}
-                                                </div>
-                                                <div
-                                                  style={{
-                                                    color: "gray",
-                                                    fontSize: 12,
-                                                    marginLeft: 20,
-                                                  }}
-                                                >
-                                                  X{sku.totalQuantity}
-                                                </div>
-                                              </div>
-                                            </div>
-                                          ))
-                                        )}
-                                      </div>
-                                    )}
-                                    <div
-                                      style={{
-                                        display: "flex",
-                                        flexDirection: "row",
-                                        justifyContent: "space-between",
-                                        marginBottom: 5,
-                                        marginTop: 10,
-                                      }}
-                                    >
-                                      <div>
-                                        <div
-                                          style={{
-                                            color: "gray",
-                                            fontSize: 11,
-                                          }}
-                                        >
-                                          Order Date:{" "}
-                                          <span
-                                            style={{
-                                              color: "#333",
-                                              fontWeight: "bold",
-                                              fontSize: 10,
-                                            }}
-                                          >
-                                            {order.orderedDate}
-                                          </span>{" "}
-                                          <br />
-                                        </div>
-                                        <div
-                                          style={{
-                                            color: "gray",
-                                            fontSize: 11,
-                                          }}
-                                        >
-                                          Order status:{" "}
-                                          <span
-                                            style={{
-                                              color: "#ff8084",
-                                              fontWeight: "bold",
-                                              fontSize: 10,
-                                            }}
-                                          >
-                                            {order.orderStatus}
-                                          </span>{" "}
-                                          <br />
-                                        </div>
-                                        <div
-                                          style={{
-                                            color: "gray",
-                                            fontSize: 11,
-                                          }}
-                                        >
-                                          Payment Status:{" "}
-                                          {order.paymentStatus == "Paid" ||
-                                          order.paymentStatus ==
-                                            "Partially Paid" ||
-                                          order.paymentStatus ==
-                                            "purchaseLater" ? (
-                                            <div
-                                              style={{
-                                                color: "white",
-                                                background:
-                                                  order.paymentStatus == "Paid"
-                                                    ? "darkgreen"
-                                                    : order.paymentStatus ==
-                                                      "Partially Paid"
-                                                    ? "darkorange"
-                                                    : order.paymentStatus ==
-                                                      "purchaseLater"
-                                                    ? "#596fa8"
-                                                    : "white",
-                                                border: "1px solid gainsboro",
-                                                borderRadius: 5,
-                                                padding: "1px 5px",
-                                                display: "inline",
-                                                fontSize: 7,
-                                                marginTop: 5,
-                                                fontWeight: "bold",
-                                              }}
-                                            >
-                                              {order.paymentStatus == "Paid"
-                                                ? "Paid"
-                                                : order.paymentStatus ==
-                                                  "Partially Paid"
-                                                ? "Partially Paid"
-                                                : order.paymentStatus ==
-                                                  "purchaseLater"
-                                                ? "Not Paid"
-                                                : "Not Paid"}
-                                            </div>
-                                          ) : (
-                                            <span
-                                              style={{ position: "relative" }}
-                                            >
-                                              <div
-                                                style={{
-                                                  color: "white",
-                                                  background: "#da62da",
-                                                  border: "1px solid gainsboro",
-                                                  borderRadius: 5,
-                                                  padding: "1px 5px",
-                                                  display: "inline",
-                                                  fontSize: 7,
-                                                  marginTop: 5,
-                                                  fontWeight: "bold",
-                                                }}
-                                                className="myDIV"
-                                              >
-                                                {order.paymentStatus}
-                                              </div>
-                                            </span>
-                                          )}
-                                        </div>
-
-                                        <div
-                                          style={{
-                                            color: "gray",
-                                            fontSize: 11,
-                                          }}
-                                        >
-                                          Product Price:{" "}
-                                          <span
-                                            style={{
-                                              fontWeight: "bold",
-                                              color: "#444",
-                                            }}
-                                          >
-                                            {order.actualTotal
-                                              ? order.actualTotal
-                                              : this.getSingleShopTotal(order)}
-                                            Tk
-                                          </span>
-                                        </div>
-                                        <div
-                                          style={{
-                                            color: "gray",
-                                            fontSize: 11,
-                                          }}
-                                        >
-                                          China local courier charge:{" "}
-                                          <span
-                                            style={{
-                                              fontWeight: "bold",
-                                              color: "#444",
-                                            }}
-                                          >
-                                            {order.localShipping
-                                              ? `${order.localShipping}Tk`
-                                              : "Not given yet"}{" "}
-                                          </span>
-                                        </div>
-                                        {order.shippingChargeCustomer &&
-                                        order.shippingChargeCustomer !== 0 ? (
-                                          <>
-                                            <div
-                                              style={{
-                                                color: "gray",
-                                                fontSize: 11,
-                                              }}
-                                            >
-                                              Total weight:{" "}
-                                              <span
-                                                style={{
-                                                  fontWeight: "bold",
-                                                  color: "#444",
-                                                }}
-                                              >
-                                                {order.receivedWeight} kg
-                                              </span>
-                                            </div>
-                                            <div
-                                              style={{
-                                                color: "gray",
-                                                fontSize: 11,
-                                              }}
-                                            >
-                                              Customs & Shippping rate:{" "}
-                                              <span
-                                                style={{
-                                                  fontWeight: "bold",
-                                                  color: "#444",
-                                                }}
-                                              >
-                                                {order.customerRate} tk/kg
-                                              </span>
-                                            </div>
-                                            <div
-                                              style={{
-                                                color: "gray",
-                                                fontSize: 11,
-                                              }}
-                                            >
-                                              Total Shipping charge (CN to BD):{" "}
-                                              <span
-                                                style={{
-                                                  fontWeight: "bold",
-                                                  color: "#444",
-                                                }}
-                                              >
-                                                {order.shippingChargeCustomer}{" "}
-                                                Tk
-                                              </span>
-                                            </div>
-
-                                            <div
-                                              style={{
-                                                fontWeight: "bold",
-                                                fontSize: 16,
-                                                marginTop: 20,
-                                              }}
-                                            >
-                                              {order.actualTotal
-                                                ? parseInt(order.actualTotal) +
-                                                  parseInt(
-                                                    order.shippingChargeCustomer
-                                                  ) +
-                                                  parseInt(order.localShipping)
-                                                : this.getSingleShopTotal(
-                                                    order
-                                                  ) +
-                                                  parseInt(
-                                                    order.shippingChargeCustomer
-                                                  ) +
-                                                  parseInt(order.localShipping)}
-                                              Tk
-                                              <div
-                                                style={{
-                                                  fontSize: 10,
-                                                  color: "gray",
-                                                  fontWeight: "lighter",
-                                                  marginTop: -3,
-                                                }}
-                                              >
-                                                including shipping charge
-                                              </div>
-                                            </div>
-                                          </>
-                                        ) : (
-                                          <>
-                                            <div
-                                              style={{
-                                                color: "gray",
-                                                fontSize: 11,
-                                              }}
-                                            >
-                                              Customs & Shippping rate:{" "}
-                                              <span
-                                                style={{
-                                                  fontWeight: "bold",
-                                                  color: "#444",
-                                                }}
-                                              >
-                                                {order.customerRate
-                                                  ? `${order.customerRate}tk/kg`
-                                                  : "Not given yet"}
-                                              </span>
-                                            </div>
-
-                                            <div
-                                              style={{
-                                                fontWeight: "bold",
-                                                fontSize: 16,
-                                                marginTop: 20,
-                                              }}
-                                            >
-                                              {order.actualTotal
-                                                ? order.actualTotal
-                                                : this.getSingleShopTotal(
-                                                    order
-                                                  )}
-                                              Tk
-                                              <div
-                                                style={{
-                                                  fontSize: 10,
-                                                  color: "gray",
-                                                  fontWeight: "lighter",
-                                                  marginTop: -3,
-                                                }}
-                                              >
-                                                excluding shipping charge
-                                              </div>
-                                            </div>
-                                          </>
-                                        )}
-                                      </div>
-                                      <div>
-                                        {order.otherCost ? (
-                                          <div
-                                            style={{
-                                              color: "gray",
-                                              fontSize: 11,
-                                            }}
-                                          >
-                                            Packaging & other cost{" "}
-                                            <span
-                                              style={{
-                                                fontWeight: "bold",
-                                                color: "#444",
-                                              }}
-                                            >
-                                              +Tk {order.otherCost}
-                                            </span>
-                                          </div>
-                                        ) : null}
-                                        {order.couponAmount &&
-                                        order.couponAmount !== 0 ? (
-                                          <div
-                                            style={{
-                                              color: "gray",
-                                              fontSize: 11,
-                                            }}
-                                          >
-                                            Coupon amout{" "}
-                                            <span
-                                              style={{
-                                                fontWeight: "bold",
-                                                color: "#444",
-                                              }}
-                                            >
-                                              -Tk {order.couponAmount}
-                                            </span>
-                                          </div>
-                                        ) : null}
-                                        {order.offer && order.offer !== 0 ? (
-                                          <div
-                                            style={{
-                                              color: "gray",
-                                              fontSize: 11,
-                                            }}
-                                          >
-                                            Discount (on pay now%){" "}
-                                            <span
-                                              style={{
-                                                fontWeight: "bold",
-                                                color: "#444",
-                                              }}
-                                            >
-                                              -Tk{" "}
-                                              {getOfferDiscount(order)}
-                                            </span>
-                                          </div>
-                                        ) : null}
-                                        {order.discount ? (
-                                          <div
-                                            style={{
-                                              color: "gray",
-                                              fontSize: 11,
-                                            }}
-                                          >
-                                            Discount (on shipping){" "}
-                                            <span
-                                              style={{
-                                                fontWeight: "bold",
-                                                color: "#444",
-                                              }}
-                                            >
-                                              -Tk {Math.round(order.discount)}
-                                            </span>
-                                          </div>
-                                        ) : null}
-                                        <div
-                                          style={{
-                                            color: "gray",
-                                            fontSize: 11,
-                                          }}
-                                        >
-                                          Total Paid{" "}
-                                          <span
-                                            style={{
-                                              fontWeight: "bold",
-                                              color: "#444",
-                                            }}
-                                          >
-                                            -Tk {this.getTotalPaid(order)}
-                                          </span>
-                                        </div>
-
-                                        <div
-                                          style={{
-                                            color: "gray",
-                                            fontSize: 11,
-                                          }}
-                                        >
-                                          Total Due{" "}
-                                          <span
-                                            style={{
-                                              color: "#ff8084",
-                                              fontWeight: "bold",
-                                            }}
-                                          >
-                                            Tk {this.getTotalDue(order)}
-                                          </span>
-                                        </div>
-                                        <div style={{ marginTop: 30 }} />
-
-                                        <div>
-                                          {order.refund && order.refund != 0 ? (
-                                            <div
-                                              style={{
-                                                color: "gray",
-                                                fontSize: 11,
-                                                marginLeft: 3,
-                                              }}
-                                            >
-                                              Refunded amount: <br />
-                                              <span
-                                                style={{
-                                                  fontWeight: "bold",
-                                                  fontSize: 10,
-                                                  color: "#555",
-                                                }}
-                                              >
-                                                {order.refund}Tk
-                                              </span>
-                                            </div>
-                                          ) : null}
-                                        </div>
-                                      </div>
-                                    </div>
-                                    {order.status !== "Reject" && (
-                                      <div
-                                        className="row"
-                                        style={{
-                                          margin: 0,
-                                          marginBottom: 20,
-                                          marginTop: 30,
-                                        }}
-                                      >
-                                        <div
-                                          className={`col ${
-                                            order.shipmentStatusScore >= 1
-                                              ? "each-progress-3"
-                                              : "each-progress-4"
-                                          }`}
-                                        >
-                                          <i className="icofont-paper" />
-                                          <span>Pending</span>
-                                        </div>
-                                        <div
-                                          className={`col ${
-                                            order.shipmentStatusScore >= 2
-                                              ? "each-progress-3"
-                                              : "each-progress-4"
-                                          }`}
-                                        >
-                                          <i className="icofont-tick-boxed" />
-                                          <span>Approved</span>
-                                        </div>
-                                        <div
-                                          className={`col ${
-                                            order.shipmentStatusScore >= 3
-                                              ? "each-progress-3"
-                                              : "each-progress-4"
-                                          }`}
-                                        >
-                                          <i className="icofont-building-alt" />
-                                          <span>Abroad</span>
-                                          <br />
-                                          <span style={{ top: "-10px" }}>
-                                            Warehouse
-                                          </span>
-                                        </div>
-                                        <div
-                                          className={`col ${
-                                            order.shipmentStatusScore >= 4
-                                              ? "each-progress-3"
-                                              : "each-progress-4"
-                                          }`}
-                                        >
-                                          <i className="icofont-airplane-alt" />
-                                          <span style={{ left: "-15px" }}>
-                                            Ready{" "}
-                                          </span>
-                                          <br />
-                                          <span
-                                            style={{
-                                              top: "-10px",
-                                              left: "-15px",
-                                            }}
-                                          >
-                                            fly
-                                          </span>
-                                        </div>
-                                        <div
-                                          className={`col ${
-                                            order.shipmentStatusScore >= 5
-                                              ? "each-progress-3"
-                                              : "each-progress-4"
-                                          }`}
-                                        >
-                                          <i className="icofont-shield-alt" />
-                                          <span>Bangladesh</span>
-                                          <br />
-                                          <span style={{ top: "-10px" }}>
-                                            {" "}
-                                            customs
-                                          </span>
-                                        </div>
-                                        <div
-                                          className={`col ${
-                                            order.shipmentStatusScore >= 6
-                                              ? "each-progress-3"
-                                              : "each-progress-4"
-                                          }`}
-                                        >
-                                          <i className="icofont-castle" />
-                                          <span>Paicart</span>
-                                          <br />
-                                          <span style={{ top: "-10px" }}>
-                                            {" "}
-                                            warehouse
-                                          </span>
-                                        </div>
-                                        <div
-                                          className={`col ${
-                                            order.shipmentStatusScore >= 7
-                                              ? "last-progress-3"
-                                              : "last-progress-4"
-                                          }`}
-                                        >
-                                          <i className="icofont-tick-mark" />
-                                          <span>Delivered</span>
-                                        </div>
-                                      </div>
-                                    )}
-                                    <div
-                                      style={{
-                                        color:
-                                          order.shippingChargeCustomer &&
-                                          order.shippingChargeCustomer !== 0
-                                            ? "green"
-                                            : "#ff8084",
-                                        fontSize: 10,
-                                        marginTop: 10,
-                                      }}
-                                    >
-                                      {order.shippingChargeCustomer &&
-                                      order.shippingChargeCustomer !== 0
-                                        ? "***China to Bangladesh customs & shipping charge included."
-                                        : "***China to Bangladesh customs & shipping charge will be included later."}
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
-                          <div
-                            style={{
-                              display: "flex",
-                              flexDirection: "row",
-                              marginBottom: 20,
-                              justifyContent: "flex-end",
-                              fontWeight: "bold",
-                              marginBottom: 20,
-                            }}
-                          >
-                            <div>
-                              Total paid:
-                              {paymentRequestObj && paymentRequestObj.amount}Tk
-                            </div>
-                          </div>
-                          <div
-                            style={{ display: "flex", flexDirectioin: "row" }}
-                          >
-                            <input
-                              className="terms-condition-checkbox"
-                              style={{ marginLeft: 10 }}
-                              type="checkbox"
-                              name="termsAndCondition"
-                              checked={this.state.termsAndCondition}
-                              onChange={(e) =>
-                                this.setState({
-                                  termsAndCondition:
-                                    !this.state.termsAndCondition,
-                                })
-                              }
-                            ></input>
-                            <div className="agree-terms-condition">
-                              I checked and paying the invoices.
-                              <span
-                                style={{ color: "#ff8084", cursor: "pointer" }}
-                              >
-                                &nbsp; For any kind of fault
-                              </span>
-                              &nbsp;
-                              <span
-                                style={{ color: "#ff8084", cursor: "pointer" }}
-                              >
-                                I will be responsible.
-                              </span>
-                            </div>
-                          </div>
-
-                          <div
-                            style={{
-                              display: "flex",
-                              flexDirection: "row",
-                              justifyContent: "flex-end",
-                            }}
-                          >
-                            {this.state.termsAndCondition && (
-                              <div className="procced-to-checkout">
-                                <button
-                                  onClick={() => {
-                                    this.handleSubmit();
-                                  }}
-                                  className="mt-3 btn btn-secondary "
-                                  data-dismiss="modal"
-                                  data-toggle="modal"
-                                  data-target="#request_payment_popup"
-                                  style={{ minWidth: 120, minHeight: 40 }}
-                                >
-                                  {!this.state.loader && <>Approve Payment</>}
-                                  <CircleLoader
-                                    loading={this.state.loader}
-                                    color="white"
-                                    size={15}
-                                  />
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
+            {/* Items */}
+            <div className="ap-section-title">
+              {isProductRequest ? "Bookings" : "Orders"} covered by this payment
+            </div>
+            {items.map((item, idx) => (
+              <div className="ap-card ap-item" key={`${item.id}-${idx}`}>
+                <div className="ap-item-head">
+                  <div>
+                    <div className="ap-item-id">
+                      {item.idLabel} #{item.id}
+                    </div>
+                    <div className="ap-muted">
+                      {item.date ? `${item.date} · ` : ""}
+                      Tracking: {item.trackingNo || "not given yet"}
                     </div>
                   </div>
-                </section>
+                  <div className="ap-item-badges">
+                    {item.status && (
+                      <span className="ap-badge ap-tone-blue">{statusDisplay(item.status)}</span>
+                    )}
+                    <span
+                      className={`ap-badge ${
+                        item.paymentStatus === "Paid"
+                          ? "ap-tone-green"
+                          : item.paymentStatus === "Partially Paid"
+                            ? "ap-tone-orange"
+                            : item.paymentStatus === "pending"
+                              ? "ap-tone-violet"
+                              : "ap-tone-gray"
+                      }`}
+                    >
+                      {item.paymentStatus === "pending"
+                        ? "Payment in review"
+                        : item.paymentStatus && item.paymentStatus !== "purchaseLater"
+                          ? item.paymentStatus
+                          : "Not Paid"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="ap-products">
+                  {this.renderProducts(item.raw, isProductRequest)}
+                </div>
+
+                <div className="ap-item-grid">
+                  <div className="ap-facts">
+                    {item.facts.map(([k, v]) => (
+                      <div className="ap-fact" key={k}>
+                        <span>{k}</span>
+                        <b>{v}</b>
+                      </div>
+                    ))}
+                    <div className={`ap-note ${item.hasShipping ? "ap-note-green" : ""}`}>
+                      {item.hasShipping
+                        ? "China → Bangladesh customs & shipping charge included."
+                        : "China → Bangladesh customs & shipping charge will be added later."}
+                    </div>
+                  </div>
+
+                  <div className="ap-bill">
+                    {item.lines.map((l) => (
+                      <div className="ap-bill-line" key={l.label}>
+                        <span>{l.label}</span>
+                        <b className={l.sign === "-" ? "ap-green" : ""}>
+                          {l.sign === "-" ? "− " : l.sign === "+" ? "+ " : ""}
+                          {tk(l.value)}
+                        </b>
+                      </div>
+                    ))}
+                    <div className="ap-bill-line ap-bill-strong">
+                      <span>Total bill</span>
+                      <b>{tk(item.bill)}</b>
+                    </div>
+                    <div className="ap-bill-line">
+                      <span>Already paid</span>
+                      <b className="ap-green">− {tk(item.paid)}</b>
+                    </div>
+                    <div className="ap-bill-due">
+                      <span>Due now</span>
+                      <b>{tk(item.due)}</b>
+                    </div>
+                  </div>
+                </div>
+
+                {!item.rejected && (
+                  <div className="ap-steps">
+                    {STEPS.map((label, i) => {
+                      const done = item.score >= i + 1;
+                      const current = item.score === i + 1;
+                      return (
+                        <div
+                          key={label}
+                          className={`ap-step ${done ? "is-done" : ""} ${current ? "is-current" : ""}`}
+                        >
+                          <span className="ap-step-dot">{done ? "✓" : i + 1}</span>
+                          <span className="ap-step-label">{label}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
+            ))}
+          </div>
+
+          {/* Footer */}
+          <div className="ap-foot">
+            <label className={`ap-confirm ${this.state.termsAndCondition ? "is-checked" : ""}`}>
+              <input
+                type="checkbox"
+                name="termsAndCondition"
+                checked={this.state.termsAndCondition}
+                onChange={() =>
+                  this.setState({ termsAndCondition: !this.state.termsAndCondition })
+                }
+              />
+              <span className="ap-confirm-box">{this.state.termsAndCondition ? "✓" : ""}</span>
+              <span>
+                I checked the screenshot and the invoices.{" "}
+                <span className="ap-red">I am responsible for any mistake.</span>
+              </span>
+            </label>
+            <div className="ap-actions">
+              <button type="button" className="ap-btn ap-btn-ghost" onClick={this.close}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="ap-btn ap-btn-primary"
+                disabled={!this.state.termsAndCondition || this.state.loader}
+                onClick={() => this.handleSubmit()}
+              >
+                {this.state.loader ? (
+                  <CircleLoader loading color="white" size={15} />
+                ) : (
+                  <>Approve {tk(amount)}</>
+                )}
+              </button>
             </div>
           </div>
         </div>
-      </>
+      </div>
     );
   };
 }

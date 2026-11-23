@@ -427,7 +427,7 @@ export class ProductRequestPayments extends Component {
             <div className="modal-content">
               <div
                 className="modal-header"
-                style={{ background: "rgb(0, 37, 76)", color: "#fff" }}
+                style={{ background: "#ff6a00", color: "#fff" }}
               >
                 <div>
                   <h5

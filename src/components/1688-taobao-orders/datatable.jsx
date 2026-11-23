@@ -1,8 +1,8 @@
+import DeliveryRequestCell from "../common/deliveryRequestCell.jsx";
 import { getOfferDiscount } from "../../constants/offerMath";
 import {
   getDisplayPaymentState,
   getOrderPayable,
-  PAYMENT_STATE_COLORS,
 } from "../../constants/paymentMath";
 import React, { Component, Fragment } from "react";
 import ReactTable from "react-table";
@@ -50,6 +50,23 @@ import { statusDisplay } from "../../constants/statusDisplay";
 import OrderPrintSlip from "../common/orderPrintSlip.jsx";
 import { shopKeyOf } from "../../constants/shopGroups";
 import { joinList, withUnit } from "../../constants/displayList";
+import FraudCheckPanel from "./fraudCheckPanel.jsx";
+import PathaoBookingModal from "./pathaoBookingModal.jsx";
+import {
+  BulkActionBar,
+  BulkPaymentModal,
+  BulkStatusModal,
+  selectionColumn,
+  toggleId,
+} from "../common/bulkActions.jsx";
+import { buildStatusPatch, PAYMENT_METHODS } from "../../constants/bulkActions";
+import PaymentModal, {
+  PmBadge,
+  orderStatusTone,
+  paymentStateTone,
+} from "../common/paymentModal.jsx";
+import { getOrderDue } from "../../constants/paymentMath";
+import { notifyCustomer } from "../common/notifyCustomer";
 const PAYMENT_STATE_TONES = {
   Paid: "green",
   "Partially Paid": "orange",
@@ -72,6 +89,48 @@ const ORDER_STATUS_TONES = {
   Reject: "red",
 };
 
+/* One button look for everything in the Actions column, so the box reads as
+   a tidy list instead of a stack of differently coloured chips. */
+const ACT_BASE = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 6,
+  width: "100%",
+  height: 30,
+  padding: "0 10px",
+  borderRadius: 7,
+  border: "1px solid #e2e8f0",
+  background: "#fff",
+  color: "#334155",
+  fontSize: 12,
+  fontWeight: 600,
+  cursor: "pointer",
+  whiteSpace: "nowrap",
+  textDecoration: "none",
+  boxSizing: "border-box",
+};
+const ACT = {
+  neutral: ACT_BASE,
+  primary: {
+    ...ACT_BASE,
+    background: "#FF6A00",
+    borderColor: "#FF6A00",
+    color: "#fff",
+  },
+  pathao: { ...ACT_BASE, borderColor: "#f3b4bc", color: "#c8102e" },
+  danger: { ...ACT_BASE, borderColor: "#fecaca", color: "#b91c1c" },
+  disabled: { ...ACT_BASE, color: "#94a3b8", cursor: "not-allowed" },
+};
+const ACT_STATUS = {
+  display: "flex",
+  alignItems: "center",
+  gap: 6,
+  fontSize: 12,
+  fontWeight: 700,
+  color: "#0f7b35",
+};
+
 export class Datatable extends Component {
   constructor(props) {
     super(props);
@@ -87,8 +146,97 @@ export class Datatable extends Component {
       chineseTrackingObj: null,
       selectedAddress: {},
       pickOrderError: null,
+      // Set only by the Pick button on the New Orders tab - that click is
+      // what triggers the Pathao fraud check.
+      fraudCheckOrder: null,
+      pathaoOrder: null,
+      bulkSelected: [], // orderIds ticked for bulk status / payment
+      bulkAction: null, // "status" | "payment"
     };
   }
+
+  /* Bulk actions ---------------------------------------------------------- */
+
+  /* Same choices as the single-order status dropdown, plus Received in
+     Warehouse, which has its own tab. */
+  static BULK_STATUSES = [
+    { value: "Purchased", icon: "fa-shopping-cart" },
+    { value: "Received in Warehouse", icon: "fa-cubes" },
+    { value: "Ready for fly", icon: "fa-plane" },
+    { value: "Bangladesh customs", icon: "fa-shield" },
+    { value: "Bangladesh warehouse", icon: "fa-check-square-o" },
+    { value: "Paicart warehouse", icon: "fa-home" },
+    { value: "Delivered", icon: "fa-handshake-o" },
+    { value: "Reject", danger: true },
+  ];
+
+  bulkItems = () =>
+    (this.props.myData || [])
+      .filter((order) => this.state.bulkSelected.includes(order.orderId))
+      .map((order) => ({
+        id: order.orderId,
+        label: order.orderId,
+        sub: `${order.uid ? `${order.uid}-` : ""}${order.displayName || "Guest"}`,
+        status: order.orderStatus,
+        due: getOrderDue(order),
+        raw: order,
+      }));
+
+  /* The single-order modal refuses to save an order with no purchasing RMB;
+     the bulk move keeps that rule except for rejecting. */
+  validateBulkStatus = (item, status) =>
+    status !== "Reject" && !item.raw.purchasingRmb
+      ? "No purchasing RMB entered"
+      : null;
+
+  applyBulkStatus = async (item, status, { notify }) => {
+    const order = item.raw;
+    /* only the changed fields — a full copy of `order` would write back
+       whatever else was stale in it */
+    await this.props.updateOrderApiRedux({
+      orderId: order.orderId,
+      ...buildStatusPatch(order, status, "orderStatus"),
+    });
+    if (notify) {
+      notifyCustomer(order.userId, {
+        title: "Order Status",
+        body: `Your orderId:-${order.orderId} is ${statusDisplay(status)}.`,
+      });
+    }
+  };
+
+  /* Mirrors handleSubmit: a payment row on the order plus a pending cash-in
+     entry for accounts. */
+  applyBulkPayment = async (item, { amount, method, paymentStatus }) => {
+    const order = item.raw;
+    const { currentAdmin } = this.props;
+    const date = new Date();
+    await this.props.updateOrderApiRedux({
+      orderId: order.orderId,
+      paymentStatus,
+      payments: [
+        ...(order.payments || []),
+        {
+          amount,
+          method,
+          receivedBy: currentAdmin.name,
+          date: date.toLocaleDateString("en-GB"),
+        },
+      ],
+    });
+    await this.props.uploadCashInRedux({
+      id: `${date.getTime()}${Math.floor(Math.random() * 1000)}`,
+      category: "1688 Order",
+      subCategory: method,
+      month: this.getMonthName(),
+      date: date.toLocaleDateString("en-GB"),
+      note: `Order Id: ${order.orderId}   User: ${order.displayName || "Guest"}   (bulk payment)`,
+      amount,
+      receiveBy: currentAdmin.name,
+      status: "pending",
+      unEditable: true,
+    });
+  };
 
   selectRow = (e, i) => {
     if (!e.target.checked) {
@@ -238,19 +386,27 @@ export class Datatable extends Component {
     // }
     console.log(this.state);
 
+    /* The payment window keeps the copy of the order it was opened with. Writing
+       that whole copy back put an order the admin had moved on (e.g. to Paicart
+       warehouse) straight back to its old status — so write only the payment
+       fields, built on the latest copy of the order in the list. */
+    const fresh =
+      (this.props.myData || []).find(
+        (o) => String(o.orderId) === String(this.state.productObj.orderId),
+      ) || this.state.productObj;
     await this.props.updateOrderApiRedux({
-      ...this.state.productObj,
+      orderId: fresh.orderId,
       paymentStatus:
         this.state.paymentStatus !== ""
           ? this.state.paymentStatus
-          : this.state.productObj.paymentStatus
-            ? this.state.productObj.paymentStatus
+          : fresh.paymentStatus
+            ? fresh.paymentStatus
             : "purchaseLater",
       payments:
-        this.state.productObj.payments &&
-        this.state.productObj.payments.length > 0
+        fresh.payments &&
+        fresh.payments.length > 0
           ? [
-              ...this.state.productObj.payments,
+              ...fresh.payments,
               {
                 amount: this.state.amount,
                 method: this.state.method,
@@ -296,6 +452,7 @@ export class Datatable extends Component {
       productObj: null,
       method: "",
       amount: "",
+      paymentStatus: "",
     });
     document.getElementById("close-button-for-payment-modal").click();
   };
@@ -540,20 +697,30 @@ export class Datatable extends Component {
         const order = myData.find((o) => o.orderId == row.original["Order Id"]);
         if (!order) return null;
         const key = shopKeyOf(order);
-        const group = key && this.props.shopGroups ? this.props.shopGroups[key] : null;
+        const group =
+          key && this.props.shopGroups ? this.props.shopGroups[key] : null;
         const multiCustomer = group && group.customers > 1;
         return (
           <div style={{ textAlign: "left", minWidth: 140 }}>
             <div
               title={order.shopName || ""}
-              style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }}
+              style={{
+                fontSize: 12,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                maxWidth: 180,
+              }}
             >
               {order.shopName || "—"}
             </div>
             {group && group.count > 1 && (
               <button
                 type="button"
-                onClick={() => this.props.onFilterShop && this.props.onFilterShop(key, group.name)}
+                onClick={() =>
+                  this.props.onFilterShop &&
+                  this.props.onFilterShop(key, group.name)
+                }
                 title="Show only this shop's orders"
                 style={{
                   marginTop: 4,
@@ -567,7 +734,8 @@ export class Datatable extends Component {
                   color: multiCustomer ? "#7c3aed" : "#0369a1",
                 }}
               >
-                ×{group.count} orders · {group.customers} customer{group.customers === 1 ? "" : "s"}
+                ×{group.count} orders · {group.customers} customer
+                {group.customers === 1 ? "" : "s"}
               </button>
             )}
           </div>
@@ -785,7 +953,7 @@ export class Datatable extends Component {
               style={{
                 display: "flex",
                 flexDirection: "column",
-                alignItems: "center",
+                alignItems: "flex-start",
                 gap: 4,
               }}
             >
@@ -976,13 +1144,13 @@ export class Datatable extends Component {
         accessor: (str) => "orderDetails",
         Cell: (row) => {
           const requestObj = myData.find(
-            (order) => order.orderId == row.original["Order Id"]
+            (order) => order.orderId == row.original["Order Id"],
           );
           return <ModeBadge mode={getShipmentMode(requestObj)} />;
         },
         style: { textAlign: "center" },
         sortable: false,
-        },
+      },
       {
         Header: <b>Payment status</b>,
         id: "orderDetails",
@@ -1066,49 +1234,17 @@ export class Datatable extends Component {
           return (
             <Button
               variant="subtle"
-              data-toggle="modal"
-              data-target="#detailInfoModal"
-              onClick={async () => {
-                this.setState({
-                  productObj: requestObj,
-                });
-                let orderTracking2 =
-                  await this.props.getOrderTrackingResultRedux(
-                    requestObj.trackingNo,
-                  );
-                console.log(orderTracking2);
-                if (orderTracking2) {
-                  this.props.updateOrderApiRedux({
-                    ...requestObj,
-                    shippingMark: orderTracking2.parcelsArray.map(
-                      (parcel) => `${parcel.shippingMark}`,
-                    ),
-                    cargoCompany: "ALG Limited",
-                    lotNo: orderTracking2.lotArray.map((lot) => `${lot}`),
-                    ctnNo: orderTracking2.parcelsArray.map(
-                      (parcel) => `${parcel.parcelId}`,
-                    ),
-                    cargoRate: orderTracking2.parcelsArray.map((parcel) => {
-                      if (parcel.ratePerKg) {
-                        return `${parcel.ratePerKg} tk/kg`;
-                      } else {
-                        return "Not given yet";
-                      }
-                    }),
-                    shippingChargeCargo: orderTracking2.parcelsArray.map(
-                      (parcel) => {
-                        if (parcel.finalTotal) {
-                          return `${parcel.finalTotal} Tk`;
-                        } else {
-                          return "Not given yet";
-                        }
-                      },
-                    ),
-                  });
-                }
-              }}
+              style={ACT.neutral}
+              /* Opens the details page, which also syncs every tracking
+                 number's cartons from ALG (one lookup per number). */
+              onClick={() =>
+                this.props.history.push({
+                  pathname: `${process.env.PUBLIC_URL}/1688-taobao-orders/details/${requestObj.orderId}`,
+                  state: { from: window.location.pathname + window.location.search },
+                })
+              }
             >
-              Details
+              <i className="fa fa-file-text-o" /> Details
             </Button>
           );
         },
@@ -1134,8 +1270,9 @@ export class Datatable extends Component {
                 <Link
                   to={`${process.env.PUBLIC_URL}/pages/dashboard/buy-and-ship-for/invoice/${order.orderId}`}
                   target="_blank"
+                  style={ACT.neutral}
                 >
-                  <Badge tone="orange">Invoice</Badge>
+                  <i className="fa fa-print" /> Invoice
                 </Link>
               )}
             </>
@@ -1163,25 +1300,16 @@ export class Datatable extends Component {
                       productObj: order,
                     });
                   }}
-                  style={{
-                    background: "green",
-                    color: "white",
-                    display: "inline",
-                    borderRadius: 5,
-                    fontSize: 12,
-                    padding: "4px 7px",
-                    cursor: "pointer",
-                    fontWeight: "bold",
-                  }}
+                  style={ACT_STATUS}
                 >
-                  ✅ Picked
+                  <i className="fa fa-check-circle" /> Picked
                 </div>
               ) : null}
               {order.agentId && order.removedFromPaymentLink && (
                 <div
                   onClick={async () => {
                     await this.props.updateOrderApiRedux({
-                      ...order,
+                      orderId: order.orderId,
                       agentStatus: "",
                       agentId: "",
                       removedFromPaymentLink: false,
@@ -1190,37 +1318,56 @@ export class Datatable extends Component {
                       `Order ${order.orderNumber || order.orderId} unpicked. It can be picked again.`,
                     );
                   }}
-                  style={{
-                    background: "crimson",
-                    color: "white",
-                    display: "inline",
-                    borderRadius: 5,
-                    fontSize: 12,
-                    padding: "4px 7px",
-                    cursor: "pointer",
-                    fontWeight: "bold",
-                    marginLeft: 5,
-                  }}
+                  style={{ ...ACT.danger, marginTop: 6 }}
                 >
-                  Unpick
+                  <i className="fa fa-undo" /> Unpick
                 </div>
               )}
+              {this.props.orderStatus == "Paicart-warehouse" &&
+                !(currentAdmin && currentAdmin.status == "Partner") && (
+                  <div style={{ marginTop: order.agentId ? 8 : 0 }}>
+                    {order.pathaoBooking?.consignmentId ? (
+                      <div
+                        title={`Booked ${order.pathaoBooking.bookedDate || ""} ${order.pathaoBooking.bookedTime || ""}`}
+                        style={{
+                          border: "1px solid #e2e8f0",
+                          borderRadius: 7,
+                          padding: "5px 10px",
+                          background: "#f8fafc",
+                          fontSize: 11,
+                          color: "#64748b",
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        <div style={{ fontWeight: 700, color: "#c8102e" }}>
+                          <i className="fa fa-truck" /> Pathao booked
+                        </div>
+                        <div
+                          style={{
+                            fontFamily: "monospace",
+                            color: "#334155",
+                            fontSize: 12,
+                          }}
+                        >
+                          {order.pathaoBooking.consignmentId}
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        role="button"
+                        onClick={() => this.setState({ pathaoOrder: order })}
+                        style={ACT.pathao}
+                      >
+                        <i className="fa fa-truck" /> Pathao Booking
+                      </div>
+                    )}
+                  </div>
+                )}
               {!order.agentId && (
                 <>
                   {currentAdmin && currentAdmin.status == "Partner" ? (
-                    <div
-                      style={{
-                        background: "darkorange",
-                        color: "white",
-                        display: "inline",
-                        borderRadius: 5,
-                        fontSize: 12,
-                        padding: "4px 7px",
-                        cursor: "pointer",
-                        fontWeight: "bold",
-                      }}
-                    >
-                      ✍ Pick
+                    <div style={ACT.primary}>
+                      <i className="fa fa-hand-paper-o" /> Pick
                     </div>
                   ) : (
                     <div
@@ -1228,22 +1375,15 @@ export class Datatable extends Component {
                         this.setState({
                           productObj: order,
                           pickOrderError: null,
+                          fraudCheckOrder:
+                            this.props.orderStatus == "new" ? order : null,
                         });
                       }}
-                      style={{
-                        background: "darkorange",
-                        color: "white",
-                        display: "inline",
-                        borderRadius: 5,
-                        fontSize: 12,
-                        padding: "4px 7px",
-                        cursor: "pointer",
-                        fontWeight: "bold",
-                      }}
+                      style={ACT.primary}
                       data-toggle="modal"
                       data-target="#pickModal"
                     >
-                      ✍ Pick
+                      <i className="fa fa-hand-paper-o" /> Pick
                     </div>
                   )}
                 </>
@@ -1269,7 +1409,7 @@ export class Datatable extends Component {
               {currentAdmin && currentAdmin.status == "Partner" ? (
                 <></>
               ) : (
-                <div>
+                <div style={{ display: "flex", gap: 0 }}>
                   {order?.agentStatus == "Picked" && (
                     <IconButton
                       tone="green"
@@ -1402,6 +1542,373 @@ export class Datatable extends Component {
 
     console.log(chineseTrackingObj);
 
+    /* 17 narrow columns did not fit even a wide monitor, and react-table
+       clipped whatever overflowed its default 100px. Fold related columns
+       into 7 wider ones that stack their pieces vertically. Every cell above
+       reads only row.original, so it can be reused as-is inside a group. */
+    const labelOf = (col) => {
+      const h = col.Header;
+      if (typeof h === "string") return h;
+      return h && h.props && typeof h.props.children === "string"
+        ? h.props.children
+        : null;
+    };
+    const byLabel = {};
+    columns.forEach((col) => {
+      const label = labelOf(col);
+      if (label) byLabel[label] = col;
+    });
+    const renderPart = (col, row) =>
+      col.Cell ? col.Cell(row) : row.original[col.accessor];
+    const PART_LABEL = {
+      fontSize: 10,
+      fontWeight: 700,
+      color: "#94a3b8",
+      textTransform: "uppercase",
+      letterSpacing: "0.05em",
+      lineHeight: 1.2,
+      marginBottom: 4,
+    };
+    /* Inline padding on purpose: the admin theme's .rt-td rules kept
+       overriding stylesheet padding, which left content against the edge. */
+    const CELL = {
+      display: "flex",
+      flexDirection: "column",
+      gap: 12,
+      width: "100%",
+      minWidth: 0,
+      padding: "6px 10px",
+      boxSizing: "border-box",
+      textAlign: "left",
+      lineHeight: 1.5,
+      fontSize: 12,
+      color: "#334155",
+    };
+    const orderOf = (row) =>
+      myData.find((o) => o.orderId == row.original["Order Id"]);
+    const num = (v) => {
+      const n = parseFloat(v);
+      return Number.isFinite(n) ? n : 0;
+    };
+    const money = (v, symbol, digits = 0) =>
+      `${symbol}${num(v).toLocaleString("en-US", {
+        minimumFractionDigits: digits,
+        maximumFractionDigits: digits,
+      })}`;
+    const tk = (v, d = 0) => money(v, "৳", d);
+    const rmb = (v) => money(v, "¥", 2);
+
+    const Section = ({ title, children, fullWidth }) => (
+      <div style={{ minWidth: 0, width: fullWidth ? "100%" : undefined }}>
+        {title && <div style={PART_LABEL}>{title}</div>}
+        {children}
+      </div>
+    );
+    /* label ........ value */
+    const KV = ({ label, value, color, strong }) => (
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 10,
+          fontSize: 12,
+          lineHeight: 1.7,
+        }}
+      >
+        <span style={{ color: "#94a3b8" }}>{label}</span>
+        <span
+          style={{
+            color: color || "#334155",
+            fontWeight: strong ? 700 : 500,
+            whiteSpace: "nowrap",
+          }}
+        >
+          {value}
+        </span>
+      </div>
+    );
+    const Headline = ({ children, color }) => (
+      <div
+        style={{
+          fontSize: 16,
+          fontWeight: 800,
+          color: color || "#0f172a",
+          lineHeight: 1.3,
+          marginBottom: 4,
+        }}
+      >
+        {children}
+      </div>
+    );
+    const Divider = () => (
+      <div style={{ borderTop: "1px dashed #e2e8f0", margin: "6px 0" }} />
+    );
+    const Muted = ({ children }) => (
+      <span style={{ color: "#cbd5e1" }}>{children}</span>
+    );
+
+    const custom = (id, header, minWidth, render, gap) => ({
+      id,
+      Header: <b>{header}</b>,
+      accessor: (r) => r["Order Id"],
+      sortable: false,
+      minWidth,
+      style: { textAlign: "left", alignItems: "flex-start" },
+      Cell: (row) => {
+        const order = orderOf(row);
+        return order ? (
+          <div style={gap ? { ...CELL, gap } : CELL}>{render(order, row)}</div>
+        ) : null;
+      },
+    });
+    /* Reuses an existing column's cell (badges, buttons and their modals)
+       under a small section title. */
+    const group = (id, header, minWidth, parts, opts = {}) =>
+      custom(
+        id,
+        header,
+        minWidth,
+        (order, row) =>
+          parts
+            .filter(([, label]) => byLabel[label])
+            .map(([title, label]) => (
+              <Section key={label} title={title} fullWidth={opts.fullWidth}>
+                {renderPart(byLabel[label], row)}
+              </Section>
+            )),
+        opts.gap,
+      );
+
+    const quoted1688 = (order) =>
+      order.creationTime1688 && order.creationTime1688.totalSuccessAmount
+        ? {
+            total: num(order.creationTime1688.totalSuccessAmount),
+            postFee: num(order.creationTime1688.postFee),
+          }
+        : null;
+
+    const bulkEnabled = !(currentAdmin && currentAdmin.status == "Partner");
+    const bulkIds = (this.props.myData || []).map((o) => o.orderId);
+    const groupedColumns = [
+      ...(bulkEnabled
+        ? [
+            selectionColumn({
+              allIds: bulkIds,
+              selected: this.state.bulkSelected,
+              getId: (row) => row["Order Id"],
+              onToggle: (id) =>
+                this.setState((st) => ({
+                  bulkSelected: toggleId(st.bulkSelected, id),
+                })),
+              onToggleAll: (on) =>
+                this.setState({ bulkSelected: on ? bulkIds : [] }),
+            }),
+          ]
+        : []),
+      custom("g-order", "Order", 180, (order, row) => (
+        <>
+          <Section title="Order Id">
+            <div style={{ fontWeight: 700, color: "#0f172a", fontSize: 13 }}>
+              {order.orderId}
+            </div>
+            <div style={{ color: "#94a3b8" }}>{row.original["Date"]}</div>
+          </Section>
+          {byLabel["Shop"] && (
+            <Section title="Shop">{renderPart(byLabel["Shop"], row)}</Section>
+          )}
+        </>
+      )),
+
+      custom("g-customer", "Customer", 220, (order) => {
+        const a = order.deliveryAddress || {};
+        const canOpen = !(currentAdmin && currentAdmin.status == "Partner");
+        const line = (icon, text) =>
+          text ? (
+            <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+              <i
+                className={`fa ${icon}`}
+                style={{ width: 12, color: "#94a3b8", textAlign: "center" }}
+              />
+              <span style={{ minWidth: 0, wordBreak: "break-word" }}>
+                {text}
+              </span>
+            </div>
+          ) : null;
+        return (
+          <div>
+            <div
+              onClick={() =>
+                canOpen &&
+                this.props.history.push(
+                  `${process.env.PUBLIC_URL}/users/list-user/${order.userId}`,
+                )
+              }
+              style={{
+                fontWeight: 700,
+                fontSize: 13,
+                color: "#ff6a6f",
+                cursor: canOpen ? "pointer" : "default",
+                marginBottom: 6,
+              }}
+            >
+              {order.uid ? `${order.uid} · ` : ""}
+              {order.displayName || "Guest"}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+              {line("fa-user", a.name)}
+              {line("fa-phone", a.mobileNo)}
+              {line("fa-home", a.address)}
+              {line(
+                "fa-map-marker",
+                [a.thana, a.district].filter(Boolean).join(", "),
+              )}
+            </div>
+          </div>
+        );
+      }),
+
+      custom("g-bill", "Customer bill", 170, (order) => {
+        const bill = Math.trunc(
+          num(order.orderTotal) + num(order.localShipping),
+        );
+        const q = quoted1688(order);
+        const rate = num(order.exchangeRate);
+        /* Without a 1688 cost or an RMB rate the old formula reported the
+           whole bill as profit. Show it only when it can be worked out. */
+        const profit = q && rate > 0 ? bill - q.total * rate : null;
+        const weight = order.items && order.items[0] && order.items[0].weight;
+        return (
+          <div>
+            <Headline>{tk(bill)}</Headline>
+            <KV label="Post fee" value={tk(order.localShipping)} />
+            <KV
+              label="Weight"
+              value={weight ? `${weight} kg` : <Muted>—</Muted>}
+            />
+            <Divider />
+            <KV
+              label="Profit"
+              strong
+              value={
+                profit === null ? (
+                  <span style={{ color: "#94a3b8", fontWeight: 500 }}>
+                    {q ? "Rate not set" : "No 1688 cost"}
+                  </span>
+                ) : (
+                  tk(profit, 2)
+                )
+              }
+              color={profit < 0 ? "#dc2626" : "#16a34a"}
+            />
+          </div>
+        );
+      }),
+
+      custom("g-1688", "1688 quoted", 170, (order) => {
+        const q = quoted1688(order);
+        if (!q) return <Muted>Not ordered yet</Muted>;
+        return (
+          <div>
+            <Headline>{rmb(q.total)}</Headline>
+            <KV label="Post fee" value={rmb(q.postFee)} />
+            <KV
+              label="In taka"
+              value={
+                num(order.exchangeRate) > 0 ? (
+                  tk(q.total * num(order.exchangeRate), 2)
+                ) : (
+                  <Muted>—</Muted>
+                )
+              }
+            />
+            <Divider />
+            <KV
+              label="Rmb rate"
+              value={
+                num(order.exchangeRate) > 0 ? (
+                  `৳${num(order.exchangeRate)}`
+                ) : (
+                  <span style={{ color: "#94a3b8" }}>Not set</span>
+                )
+              }
+            />
+          </div>
+        );
+      }),
+
+      custom("g-1688-actual", "1688 actual", 160, (order) => {
+        const actual = parseFloat(order.actual1688OrderTotal);
+        if (!Number.isFinite(actual)) return <Muted>Not synced yet</Muted>;
+        const shipping = num(order.actual1688OrderShippingFee);
+        const q = quoted1688(order);
+        const diff = q ? actual - q.total : null;
+        return (
+          <div>
+            <Headline color="#6d28d9">{rmb(actual)}</Headline>
+            <KV label="Shipping" value={rmb(shipping)} />
+            {diff !== null && (
+              <>
+                <Divider />
+                <KV
+                  label="vs quoted"
+                  strong
+                  value={
+                    Math.abs(diff) < 0.005
+                      ? "Same"
+                      : `${diff > 0 ? "+" : "−"}${rmb(Math.abs(diff))}`
+                  }
+                  color={
+                    Math.abs(diff) < 0.005
+                      ? "#64748b"
+                      : diff > 0
+                        ? "#dc2626"
+                        : "#16a34a"
+                  }
+                />
+              </>
+            )}
+          </div>
+        );
+      }),
+
+      group("g-tracking", "1688 order & tracking", 200, [
+        ["1688 order no", "Order Number"],
+        ["Tracking no", "Tracking No"],
+        ["Method", "Method"],
+      ]),
+      group("g-status", "Status", 150, [
+        ["Payment", "Payment status"],
+        ["Order", "Order status"],
+      ]),
+      /* Paicart warehouse: how it will reach the customer — the
+         customer's request from To Receive, or set here by staff */
+      ...(this.props.orderStatus == "Paicart-warehouse"
+        ? [
+            custom("g-delivery", "Delivery request", 170, (order) => (
+              <DeliveryRequestCell kind="order" record={order} admin={currentAdmin} />
+            )),
+          ]
+        : []),
+      group(
+        "g-actions",
+        "Actions",
+        170,
+        [
+          [null, "Process"],
+          [null, "Order Details"],
+          [null, "Invoice"],
+          [null, "Update"],
+        ],
+        { fullWidth: true, gap: 6 },
+      ),
+    ];
+    /* The multi-pay checkbox column only ever has checkboxes on Picked
+       Orders; elsewhere it was an empty column. */
+    const payColumn = columns[columns.length - 1];
+    if (this.props.orderStatus == "picked-orders" && payColumn) {
+      groupedColumns.push({ ...payColumn, id: "g-pay", minWidth: 110 });
+    }
+
     return (
       <Fragment>
         {newData.length === 0 ? (
@@ -1416,7 +1923,7 @@ export class Datatable extends Component {
             message={
               this.props.isFiltered
                 ? "Nothing here matches your search, payment filter or Air/Sea tab. Try widening the date range or clearing the filters."
-                : "Nothing has reached this stage in the selected date range yet — new 1688/Taobao orders show up here automatically."
+                : "Nothing has reached this stage in the selected date range yet — new website orders show up here automatically."
             }
             actionLabel={this.props.isFiltered ? "Clear filters" : undefined}
             onAction={
@@ -1426,9 +1933,9 @@ export class Datatable extends Component {
         ) : (
           <ReactTable
             data={newData}
-            columns={columns}
+            columns={groupedColumns}
             defaultPageSize={pageSize}
-            className={myClass}
+            className={`${myClass || ""} orders-1688-table`}
             showPagination={pagination}
           />
         )}
@@ -1450,7 +1957,7 @@ export class Datatable extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}
@@ -1467,7 +1974,14 @@ export class Datatable extends Component {
                   Order Id: {productObj && productObj.orderId}{" "}
                   <OrderPrintSlip record={productObj} kind="order" />
                   {productObj && (
-                    <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 6,
+                        marginTop: 8,
+                        flexWrap: "wrap",
+                      }}
+                    >
                       <Badge
                         tone={
                           PAYMENT_STATE_TONES[
@@ -1548,7 +2062,7 @@ export class Datatable extends Component {
                             Number.isFinite(rmb)
                               ? `shipping ¥ ${
                                   parseFloat(
-                                    productObj.actual1688OrderShippingFee
+                                    productObj.actual1688OrderShippingFee,
                                   ) || 0
                                 }`
                               : ""
@@ -1650,8 +2164,8 @@ export class Datatable extends Component {
                                 {item.propertyNames &&
                                   item.propertyNames.length > 0 && (
                                     <div>
-                                      {item.propertyNames[0]}: {sku.color}
-                                      , <br />
+                                      {item.propertyNames[0]}: {sku.color},{" "}
+                                      <br />
                                       {sku.size &&
                                         `${item.propertyNames[1]}: ${sku.size}`}
                                     </div>
@@ -2222,91 +2736,128 @@ export class Datatable extends Component {
                         <div className="category-list-shipping">
                           Carton No:{" "}
                           <span style={{ fontWeight: "lighter" }}>
-                            {joinList(orderTracking.parcelsArray.map((parcel) => parcel.parcelId))}
+                            {joinList(
+                              orderTracking.parcelsArray.map(
+                                (parcel) => parcel.parcelId,
+                              ),
+                            )}
                           </span>
                         </div>
                         <div className="category-list-shipping">
                           Received Date:{" "}
                           <span style={{ fontWeight: "lighter" }}>
-                            {joinList(orderTracking.parcelsArray.map((parcel) => parcel.dateofWarehouseReceive))}
+                            {joinList(
+                              orderTracking.parcelsArray.map(
+                                (parcel) => parcel.dateofWarehouseReceive,
+                              ),
+                            )}
                           </span>
                         </div>
                         <div className="category-list-shipping">
                           Shipping Mark:{" "}
                           <span style={{ fontWeight: "lighter" }}>
-                            {joinList(orderTracking.parcelsArray.map((parcel) => parcel.shippingMark))}
+                            {joinList(
+                              orderTracking.parcelsArray.map(
+                                (parcel) => parcel.shippingMark,
+                              ),
+                            )}
                           </span>
                         </div>
                         <div className="category-list-shipping">
                           Product Name:{" "}
                           <span style={{ fontWeight: "lighter" }}>
-                            {joinList(orderTracking.parcelsArray.map((parcel) => parcel.productName))}
+                            {joinList(
+                              orderTracking.parcelsArray.map(
+                                (parcel) => parcel.productName,
+                              ),
+                            )}
                           </span>
                         </div>
                         <div className="category-list-shipping">
                           Product Contains:{" "}
                           <span style={{ fontWeight: "lighter" }}>
-                            {joinList(orderTracking.parcelsArray.map((parcel) => parcel.productType))}
+                            {joinList(
+                              orderTracking.parcelsArray.map(
+                                (parcel) => parcel.productType,
+                              ),
+                            )}
                           </span>
                         </div>
                         <div className="category-list-shipping">
                           Total CBM:{" "}
                           <span style={{ fontWeight: "lighter" }}>
-                            {joinList(orderTracking.parcelsArray.map((parcel) => parcel.totalCbm))}
+                            {joinList(
+                              orderTracking.parcelsArray.map(
+                                (parcel) => parcel.totalCbm,
+                              ),
+                            )}
                           </span>
                         </div>
                         <div className="category-list-shipping">
                           Total weight:{" "}
                           <span style={{ fontWeight: "lighter" }}>
-                            {joinList(orderTracking.parcelsArray.map((parcel) => parcel.grossWeight), " kg")}
+                            {joinList(
+                              orderTracking.parcelsArray.map(
+                                (parcel) => parcel.grossWeight,
+                              ),
+                              " kg",
+                            )}
                           </span>
                         </div>
                         <div className="category-list-shipping">
                           Rate/kg:{" "}
                           <span style={{ fontWeight: "lighter" }}>
-                            {joinList(orderTracking.parcelsArray.map((parcel) => {
-                              if (parcel.ratePerKg) {
-                                return `${parcel.ratePerKg} tk/kg`;
-                              } else {
-                                return "Not given yet";
-                              }
-                            }))}
+                            {joinList(
+                              orderTracking.parcelsArray.map((parcel) => {
+                                if (parcel.ratePerKg) {
+                                  return `${parcel.ratePerKg} tk/kg`;
+                                } else {
+                                  return "Not given yet";
+                                }
+                              }),
+                            )}
                           </span>
                         </div>
                         <div className="category-list-shipping">
                           Other charge:{" "}
                           <span style={{ fontWeight: "lighter" }}>
-                            {joinList(orderTracking.parcelsArray.map((parcel) => {
-                              if (parcel.otherCharges) {
-                                return `${parcel.otherCharges} Tk`;
-                              } else {
-                                return "Not given yet";
-                              }
-                            }))}
+                            {joinList(
+                              orderTracking.parcelsArray.map((parcel) => {
+                                if (parcel.otherCharges) {
+                                  return `${parcel.otherCharges} Tk`;
+                                } else {
+                                  return "Not given yet";
+                                }
+                              }),
+                            )}
                           </span>
                         </div>
                         <div className="category-list-shipping">
                           Packaging cost:{" "}
                           <span style={{ fontWeight: "lighter" }}>
-                            {joinList(orderTracking.parcelsArray.map((parcel) => {
-                              if (parcel.packagingCost) {
-                                return `${parcel.packagingCost} Tk`;
-                              } else {
-                                return "Not given yet";
-                              }
-                            }))}
+                            {joinList(
+                              orderTracking.parcelsArray.map((parcel) => {
+                                if (parcel.packagingCost) {
+                                  return `${parcel.packagingCost} Tk`;
+                                } else {
+                                  return "Not given yet";
+                                }
+                              }),
+                            )}
                           </span>
                         </div>
                         <div className="category-list-shipping">
                           Final Total:{" "}
                           <span style={{ fontWeight: "lighter" }}>
-                            {joinList(orderTracking.parcelsArray.map((parcel) => {
-                              if (parcel.finalTotal) {
-                                return `${parcel.finalTotal} Tk`;
-                              } else {
-                                return "Not given yet";
-                              }
-                            }))}
+                            {joinList(
+                              orderTracking.parcelsArray.map((parcel) => {
+                                if (parcel.finalTotal) {
+                                  return `${parcel.finalTotal} Tk`;
+                                } else {
+                                  return "Not given yet";
+                                }
+                              }),
+                            )}
                           </span>
                         </div>
                       </>
@@ -2347,7 +2898,7 @@ export class Datatable extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}
@@ -2773,7 +3324,7 @@ export class Datatable extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}
@@ -2804,6 +3355,16 @@ export class Datatable extends Component {
 
               <div className="modal-body">
                 <div style={{ padding: "0px 15px" }}></div>
+
+                {this.props.orderStatus == "new" &&
+                  this.state.fraudCheckOrder && (
+                    <FraudCheckPanel
+                      phone={
+                        this.state.fraudCheckOrder.deliveryAddress?.mobileNo
+                      }
+                      name={this.state.fraudCheckOrder.deliveryAddress?.name}
+                    />
+                  )}
 
                 {productObj && productObj.warehouse && (
                   <div style={{ fontSize: 11 }}>
@@ -2861,8 +3422,8 @@ export class Datatable extends Component {
                                 {item.propertyNames &&
                                   item.propertyNames.length > 0 && (
                                     <div>
-                                      {item.propertyNames[0]}: {sku.color}
-                                      , <br />
+                                      {item.propertyNames[0]}: {sku.color},{" "}
+                                      <br />
                                       {sku.size &&
                                         `${item.propertyNames[1]}: ${sku.size}`}
                                     </div>
@@ -3173,7 +3734,7 @@ export class Datatable extends Component {
                       }
 
                       this.props.updateOrderApiRedux({
-                        ...productObj,
+                        orderId: productObj.orderId,
                         agentStatus: "Picked",
                         agentId: this.props.currentAdmin.adminId,
                         pickedDate: date.toLocaleDateString("en-GB"),
@@ -3185,9 +3746,7 @@ export class Datatable extends Component {
                           : "",
                         creationTime1688: {
                           postFee: orderObj1688.postFee
-                            ? parseFloat(orderObj1688.postFee / 100).toFixed(
-                                2,
-                              )
+                            ? parseFloat(orderObj1688.postFee / 100).toFixed(2)
                             : "",
                           totalSuccessAmount: orderObj1688.totalSuccessAmount
                             ? parseFloat(
@@ -3217,564 +3776,111 @@ export class Datatable extends Component {
           </div>
         </div>
 
-        <div
-          className="modal fade"
-          id="paymentModal"
-          tabIndex="-1"
-          role="dialog"
-          aria-labelledby="exampleModalLabel"
-          aria-hidden="true"
-        >
-          <div
-            className="modal-dialog"
-            role="document"
-            style={{ margin: "auto", minWidth: "60%" }}
-          >
-            <div className="modal-content" style={{ top: 10, margin: "auto" }}>
-              <div
-                className="modal-header"
-                style={{
-                  backgroundColor: "rgb(0, 37, 76)",
-                  paddingTop: 20,
-                  paddingBottom: 20,
-                }}
-              >
-                <div
-                  className="modal-title"
-                  style={{
-                    fontWeight: "bold",
-                    fontSize: 17,
-                    color: "white",
-                  }}
-                  id="exampleModalLabel"
-                >
-                  Order Id: {productObj && productObj.orderId}
-                </div>
-                <button
-                  type="button"
-                  className="close"
-                  data-dismiss="modal"
-                  aria-label="Close"
-                  id="personal-info-close"
-                >
-                  <span aria-hidden="true" style={{ color: "white" }}>
-                    &times;
-                  </span>
-                </button>
-              </div>
-              <div className="modal-body">
-                <div className="row">
-                  <div
-                    className="col"
-                    style={{
-                      fontWeight: "bold",
-                      borderBottom: "1px solid gainsboro",
-                      paddingBottom: 5,
-                    }}
-                  >
-                    Make New Payment
-                  </div>
-                </div>
-                <div style={{ marginTop: 10 }}>
-                  <div
-                    className="row"
-                    style={{
-                      marginBottom: 10,
-                      borderBottom: "1px solid gainsboro",
-                    }}
-                  >
-                    <div className="col">
-                      <div
-                        style={{
-                          color: "#18768f",
-                          fontWeight: "bold",
-                          marginBottom: 5,
-                        }}
-                      >
-                        Order Information
-                      </div>
-
-                      <div className="category-list-shipping">
-                        Product Price:{" "}
-                        <span
-                          style={{
-                            fontWeight: "bold",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {productObj && productObj.actualTotal}Tk
-                        </span>
-                      </div>
-                      <div className="category-list-shipping">
-                        Coupon used:{" "}
-                        <span
-                          style={{
-                            fontWeight: "lighter",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {productObj && productObj.couponUsed
-                            ? productObj.couponUsed.name
-                            : "None"}{" "}
-                        </span>
-                      </div>
-                      <div className="category-list-shipping">
-                        Offer (%):{" "}
-                        <span
-                          style={{
-                            fontWeight: "lighter",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {productObj && productObj.offer
-                            ? productObj.offer
-                            : "0%"}
-                        </span>
-                      </div>
-                      <div className="category-list-shipping">
-                        Coupon Amount:{" "}
-                        <span
-                          style={{
-                            fontWeight: "lighter",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          -
-                          {productObj && productObj.couponAmount
-                            ? productObj.couponAmount
-                            : 0}
-                          Tk
-                        </span>
-                      </div>
-
-                      <div className="category-list-shipping">
-                        Discount on (pay now %):{" "}
-                        <span
-                          style={{
-                            fontWeight: "lighter",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          -
-                          {productObj &&
-                          productObj.offer &&
-                          productObj.offer !== 0
-                            ? `${getOfferDiscount(productObj)}
-                                  Tk`
-                            : "0Tk"}
-                        </span>
-                      </div>
-
-                      <div className="category-list-shipping">
-                        Product Price (after discount):{" "}
-                        <span
-                          style={{
-                            fontWeight: "bold",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {productObj && productObj.orderTotal}Tk
-                        </span>
-                      </div>
-                      <div className="category-list-shipping">
-                        Local Shipping cost (china):{" "}
-                        <span
-                          style={{
-                            fontWeight: "lighter",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          +
-                          {productObj && productObj.localShipping
-                            ? productObj.localShipping
-                            : 0}
-                          Tk
-                        </span>
-                      </div>
-                      <div className="category-list-shipping">
-                        Packaging & other Cost:{" "}
-                        <span
-                          style={{
-                            fontWeight: "lighter",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          +
-                          {productObj && productObj.otherCost
-                            ? productObj.otherCost
-                            : 0}
-                          Tk
-                        </span>
-                      </div>
-
-                      <div className="category-list-shipping">
-                        Discount (on shippment):{" "}
-                        <span
-                          style={{
-                            fontWeight: "lighter",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          -
-                          {productObj && productObj.discount
-                            ? productObj.discount
-                            : 0}
-                          Tk
-                        </span>
-                      </div>
-
-                      <div className="category-list-shipping">
-                        Total Payable amount(without Shipping):{" "}
-                        <span
-                          style={{
-                            fontWeight: "bold",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {totalPayableAmount}Tk
-                        </span>
-                      </div>
-                      <div className="category-list-shipping">
-                        Received Weight:{" "}
-                        <span
-                          style={{
-                            fontWeight: "lighter",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {productObj && productObj.receivedWeight}kg
-                        </span>
-                      </div>
-                      <div className="category-list-shipping">
-                        Customs & Shipping Rate:{" "}
-                        <span
-                          style={{
-                            fontWeight: "lighter",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {productObj && productObj.customerRate}Tk/Kg
-                        </span>
-                      </div>
-                      <div className="category-list-shipping">
-                        Total Shipping Charge:{" "}
-                        <span
-                          style={{
-                            fontWeight: "lighter",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          +{productObj && productObj.shippingChargeCustomer}Tk
-                        </span>
-                      </div>
-                      <div className="category-list-shipping">
-                        Total Payable amount(including Shipping):{" "}
-                        <span
-                          style={{
-                            fontWeight: "bold",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {totalPayableAmountIncludingShipping
-                            ? totalPayableAmountIncludingShipping
-                            : 0}
-                          Tk
-                        </span>
-                      </div>
-                      <div className="category-list-shipping">
-                        Total Paid:{" "}
-                        <span
-                          style={{
-                            fontWeight: "lighter",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {totalPaid}Tk
-                        </span>
-                      </div>
-                      <div className="category-list-shipping">
-                        Total Due:{" "}
-                        <span
-                          style={{
-                            fontWeight: "bold",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {totalPayableAmountIncludingShipping
-                            ? totalPayableAmountIncludingShipping - totalPaid
-                            : 0}
-                          Tk
-                        </span>
-                      </div>
-                      <div className="category-list-shipping">
-                        Refunded Amount:{" "}
-                        <span
-                          style={{
-                            fontWeight: "bold",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {productObj && productObj.refund
-                            ? productObj.refund
-                            : 0}
-                          Tk
-                        </span>
-                      </div>
-
-                      <div className="category-list-shipping">
-                        Payment Status:{" "}
-                        <span
-                          style={{
-                            padding: "1px 6px",
-                            fontWeight: "bold",
-                            color: "white",
-                            borderRadius: 5,
-                            background:
-                                PAYMENT_STATE_COLORS[getDisplayPaymentState(productObj)] ||
-                                "red",
-                            textAlign: "center",
-                          }}
-                          onClick={() => {
-                            this.setState({
-                              productObj,
-                            });
-                          }}
-                        >
-                          {getDisplayPaymentState(productObj)}
-                        </span>
-                      </div>
-
-                      <div className="category-list-shipping">
-                        Order Status:{" "}
-                        <span
-                          style={{
-                            padding: 10,
-                            fontWeight: "bold",
-                            paddingTop: 0,
-                            color: "white",
-                            padding: "3px 7px",
-                            borderRadius: 5,
-                            backgroundColor: productObj
-                              ? productObj.orderStatus == "pending"
-                                ? "gainsboro"
-                                : productObj.orderStatus == "Purchased"
-                                  ? "gray"
-                                  : productObj.orderStatus ==
-                                      "Received in Warehouse"
-                                    ? "orange"
-                                    : productObj.orderStatus == "Ready for fly"
-                                      ? "darkorange"
-                                      : productObj.orderStatus ==
-                                          "Bangladesh customs"
-                                        ? "chocolate"
-                                        : productObj.orderStatus ==
-                                            "Paicart warehouse"
-                                          ? "green"
-                                          : productObj.orderStatus ==
-                                              "Bangladesh warehouse"
-                                            ? "#00a3a3"
-                                            : productObj.orderStatus ==
-                                                "Delivered"
-                                              ? "darkgreen"
-                                              : "red"
-                              : "white",
-                            textAlign: "center",
-                          }}
-                        >
-                          {productObj && statusDisplay(productObj.orderStatus)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="row">
-                  <div className="col">
-                    <form
-                      onSubmit={(e) =>
-                        this.handleSubmit(
-                          e,
-                          totalPayableAmountIncludingShipping - totalPaid,
-                        )
-                      }
-                      className="rounded-field mt-2"
-                    >
-                      <div className="form-row mb-2">
-                        <div className="col">
-                          <label
-                            style={{
-                              marginBottom: 0,
-                              fontSize: 13,
-                              fontWeight: "bold",
-                            }}
-                          >
-                            Payment Method
-                          </label>
-
-                          <select
-                            title=""
-                            name="method"
-                            className="custom-select"
-                            aria-required="true"
-                            aria-invalid="false"
-                            onChange={this.handleChange}
-                            style={{ fontSize: ".8rem" }}
-                            value={this.state.method}
-                            required
-                          >
-                            <option value="">Select Method</option>
-                            <option value="Cash">Cash</option>
-                            <option value="Bkash">Bkash</option>
-                            <option value="Nagad">Nagad</option>
-                            <option value="Rocket">Rocket</option>
-                            <option value="City">City Bank</option>
-                          </select>
-                        </div>
-                        <div className="col">
-                          <label
-                            style={{
-                              marginBottom: 0,
-                              fontSize: 13,
-                              fontWeight: "bold",
-                            }}
-                          >
-                            Paid amount
-                          </label>
-
-                          <input
-                            type="number"
-                            name="amount"
-                            className="form-control"
-                            placeholder="Enter amount"
-                            style={{ fontSize: "1rem" }}
-                            onChange={this.handleChange}
-                            value={this.state.amount}
-                            required
-                          />
-                        </div>
-                        <div className="col">
-                          <label
-                            style={{
-                              marginBottom: 0,
-                              fontSize: 13,
-                              fontWeight: "bold",
-                            }}
-                          >
-                            Payment Status
-                          </label>
-
-                          <select
-                            title=""
-                            name="paymentStatus"
-                            className="custom-select"
-                            aria-required="true"
-                            aria-invalid="false"
-                            onChange={this.handleChange}
-                            style={{ fontSize: ".8rem" }}
-                            value={this.state.paymentStatus}
-                            required
-                          >
-                            <option value="">Select Payment Status</option>
-                            <option value="Partially Paid">
-                              Partially Paid
-                            </option>
-                            <option value="Paid">Full Paid</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      <div className="form-row">
-                        <div
-                          className="col pt-3"
-                          style={{
-                            display: "flex",
-                            justifyContent: "flex-end",
-                          }}
-                        >
-                          <button
-                            type="submit"
-                            className="btn"
-                            style={{
-                              background: "rgb(0, 37, 76)",
-                              color: "white",
-                            }}
-                          >
-                            Update
-                            <i className="icofont-rounded-right"></i>
-                          </button>
-                        </div>
-                      </div>
-                    </form>
-                  </div>
-                </div>
-                <div className="row">
-                  {this.state.productObj &&
-                    this.state.productObj.payments &&
-                    this.state.productObj.payments.length > 0 && (
-                      <div className="col">
-                        <div
-                          className="row"
-                          style={{
-                            height: 1,
-                            width: "100%",
-                            background: "gainsboro",
-                            marginTop: 20,
-                            marginBottom: 20,
-                            marginRight: 0,
-                            marginLeft: 0,
-                          }}
-                        ></div>
-                        <div
-                          style={{
-                            paddingLeft: 0,
-                            color: "#18768f",
-                            fontWeight: "bold",
-                          }}
-                        >
-                          Previous Payments
-                        </div>
-                        <table className="table table-bordered table-striped table-hover">
-                          <thead
-                            style={{ background: "#18768f", color: "white" }}
-                          >
-                            <tr>
-                              <td style={{ fontWeight: "bold" }}>Date</td>
-                              <td style={{ fontWeight: "bold" }}>Method</td>
-                              <td style={{ fontWeight: "bold" }}>Amount</td>
-
-                              <td style={{ fontWeight: "bold" }}>
-                                Approved by
-                              </td>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {this.state.productObj.payments.map((payment) => (
-                              <tr>
-                                <td>{payment.date}</td>
-                                <td>{payment.method}</td>
-                                <td>{payment.amount}Tk</td>
-                                <td>{payment.receivedBy}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  data-dismiss="modal"
-                  id="close-button-for-payment-modal"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <PaymentModal
+          idLabel="Order Id"
+          idValue={productObj && productObj.orderId}
+          badges={
+            productObj && (
+              <>
+                <PmBadge tone={paymentStateTone(getDisplayPaymentState(productObj))}>
+                  {getDisplayPaymentState(productObj)}
+                </PmBadge>
+                <PmBadge tone={orderStatusTone(productObj.orderStatus)}>
+                  {statusDisplay(productObj.orderStatus)}
+                </PmBadge>
+              </>
+            )
+          }
+          summary={{
+            total: totalPayableAmountIncludingShipping || 0,
+            paid: totalPaid,
+            totalHint: "including shipping",
+          }}
+          breakdown={
+            productObj
+              ? [
+                  { section: "Product" },
+                  { label: "Product price", value: productObj.actualTotal },
+                  {
+                    label: `Coupon${
+                      productObj.couponUsed ? ` (${productObj.couponUsed.name})` : ""
+                    }`,
+                    value: productObj.couponAmount,
+                    sign: "-",
+                  },
+                  {
+                    label: `Pay-now discount (${productObj.offer || 0}%)`,
+                    value:
+                      productObj.offer && productObj.offer !== 0
+                        ? getOfferDiscount(productObj)
+                        : 0,
+                    sign: "-",
+                  },
+                  {
+                    label: "Price after discount",
+                    value: productObj.orderTotal,
+                    strong: true,
+                  },
+                  { section: "Charges" },
+                  {
+                    label: "Local shipping (China)",
+                    value: productObj.localShipping,
+                    sign: "+",
+                  },
+                  {
+                    label: "Packaging & other cost",
+                    value: productObj.otherCost,
+                    sign: "+",
+                  },
+                  {
+                    label: "Discount (on shipment)",
+                    value: productObj.discount,
+                    sign: "-",
+                  },
+                  {
+                    label: "Payable without shipping",
+                    value: totalPayableAmount,
+                    strong: true,
+                  },
+                  { section: "International shipping" },
+                  {
+                    label: "Total shipping charge",
+                    value: productObj.shippingChargeCustomer,
+                    sign: "+",
+                  },
+                ]
+              : []
+          }
+          facts={
+            productObj
+              ? [
+                  {
+                    label: "Received weight",
+                    value: `${productObj.receivedWeight || 0} kg`,
+                  },
+                  {
+                    label: "Customs & shipping rate",
+                    value: `৳${productObj.customerRate || 0}/kg`,
+                  },
+                  {
+                    label: "Refunded",
+                    value: `৳${productObj.refund || 0}`,
+                  },
+                ]
+              : []
+          }
+          methods={PAYMENT_METHODS}
+          form={{
+            method: this.state.method,
+            amount: this.state.amount,
+            paymentStatus: this.state.paymentStatus,
+          }}
+          onChange={this.handleChange}
+          onSubmit={(e) =>
+            this.handleSubmit(e, totalPayableAmountIncludingShipping - totalPaid)
+          }
+          payments={productObj && productObj.payments}
+        />
 
         <div
           className="modal fade"
@@ -3793,7 +3899,7 @@ export class Datatable extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}
@@ -4168,7 +4274,7 @@ export class Datatable extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}
@@ -4210,13 +4316,25 @@ export class Datatable extends Component {
                     {(() => {
                       /* Rejected records can still carry payments; deleting
                          erases that history, so say so before it happens. */
-                      const paid = ((productObj && productObj.payments) || []).reduce(
+                      const paid = (
+                        (productObj && productObj.payments) ||
+                        []
+                      ).reduce(
                         (total, p) => total + (parseFloat(p && p.amount) || 0),
-                        0
+                        0,
                       );
                       return paid > 0 ? (
-                        <div style={{ marginTop: 8, color: "#b91c1c", fontWeight: "normal", fontSize: 13 }}>
-                          Warning: ৳{Math.round(paid).toLocaleString()} in payments is recorded on it — its payment history will be deleted too.
+                        <div
+                          style={{
+                            marginTop: 8,
+                            color: "#b91c1c",
+                            fontWeight: "normal",
+                            fontSize: 13,
+                          }}
+                        >
+                          Warning: ৳{Math.round(paid).toLocaleString()} in
+                          payments is recorded on it — its payment history will
+                          be deleted too.
                         </div>
                       ) : null;
                     })()}
@@ -4263,7 +4381,7 @@ export class Datatable extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}
@@ -4423,6 +4541,46 @@ export class Datatable extends Component {
             </div>
           </div>
         </div>
+        {bulkEnabled && !this.state.bulkAction && (
+          <BulkActionBar
+            count={this.bulkItems().length}
+            totalDue={this.bulkItems().reduce((sum, i) => sum + i.due, 0)}
+            onStatus={() => this.setState({ bulkAction: "status" })}
+            onPayment={() => this.setState({ bulkAction: "payment" })}
+            onClear={() => this.setState({ bulkSelected: [] })}
+          />
+        )}
+        {this.state.bulkAction === "status" && (
+          <BulkStatusModal
+            items={this.bulkItems()}
+            statusOptions={Datatable.BULK_STATUSES}
+            validate={this.validateBulkStatus}
+            apply={this.applyBulkStatus}
+            notifyAvailable
+            onClose={() => this.setState({ bulkAction: null })}
+            onFinished={() => this.setState({ bulkSelected: [] })}
+          />
+        )}
+        {this.state.bulkAction === "payment" && (
+          <BulkPaymentModal
+            items={this.bulkItems()}
+            apply={this.applyBulkPayment}
+            onClose={() => this.setState({ bulkAction: null })}
+            onFinished={() => this.setState({ bulkSelected: [] })}
+          />
+        )}
+        {this.state.pathaoOrder && (
+          <PathaoBookingModal
+            order={this.state.pathaoOrder}
+            onClose={() => this.setState({ pathaoOrder: null })}
+            onBooked={(pathaoBooking) =>
+              this.props.updateOrderApiRedux({
+                orderId: this.state.pathaoOrder.orderId,
+                pathaoBooking,
+              })
+            }
+          />
+        )}
       </Fragment>
     );
   }

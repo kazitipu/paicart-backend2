@@ -16,7 +16,7 @@ import Popover from "react-bootstrap/Popover";
 import { getMultipleOrders } from "../../firebase/firebase.utils";
 import { CircleLoader } from "react-spinners";
 import { Badge, Button } from "../common/listUi.jsx";
-import { coveredIds } from "../../constants/paymentSearch";
+import { coveredIds, payableItemsOf } from "../../constants/paymentSearch";
 export class Datatable extends Component {
   constructor(props) {
     super(props);
@@ -95,7 +95,7 @@ export class Datatable extends Component {
           Type:
             paymentRequest && paymentRequest.productRequest
               ? "Product Request"
-              : "1688 Order",
+              : "Website Order",
           Method: paymentRequest ? paymentRequest.method : "",
           Amount: paymentRequest ? `${paymentRequest.payableTotal}Tk` : "",
           image: (
@@ -213,7 +213,7 @@ export class Datatable extends Component {
                     style={{ minWidth: "12%" }}
                   >
                     <Popover.Title
-                      style={{ backgroundColor: "rgb(0, 37, 76)", color: "white" }}
+                      style={{ backgroundColor: "#ff6a00", color: "white" }}
                       as="h3"
                     >
                       Order Id List
@@ -224,11 +224,9 @@ export class Datatable extends Component {
                           paddingBottom: "10px",
                         }}
                       >
-                        {paymentObj &&
-                          paymentObj.pendingOrders &&
-                          paymentObj.pendingOrders.map((order) => (
+                        {payableItemsOf(paymentObj).map((order) => (
                             <div
-                              key={order.orderId}
+                              key={order.orderId || order.bookingId}
                               style={{
                                 borderBottom: "1px solid gainsboro",
                                 paddingBottom: "5px",
@@ -288,18 +286,13 @@ export class Datatable extends Component {
                               loader: true,
                               paymentId: row.original["Payment Id"],
                             });
-                            const orderIdArray =
-                              paymentRequest.pendingOrders.map(
-                                (order) => order.orderId
-                              );
-
                             this.setState({
                               loader: false,
                               paymentId: null,
                             });
                             this.props.startToggleModal(
                               paymentRequest,
-                              paymentRequest.pendingOrders
+                              payableItemsOf(paymentRequest)
                             );
                           }
                         }}

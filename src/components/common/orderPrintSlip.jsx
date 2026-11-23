@@ -37,9 +37,24 @@ const parseList = (value) => {
   return text.split(",").map((v) => v.trim()).filter((v) => !isJunk(v));
 };
 
+/* Printing. The slip is one A4 sheet wide and carries its own 12mm padding,
+   so the browser's page margin is zeroed — which also leaves no room for the
+   browser's date / URL header and footer. Two global print rules get copied
+   into react-to-print's window and must be beaten:
+     - invoice-by-order.css: `@page { margin: 20mm }`  → this <style> sits
+       inside the slip, after every copied stylesheet, so its @page wins;
+     - Bootstrap's _print.scss: `body { min-width: 992px !important }`, which
+       made the document wider than A4 and shrank the slip to fit → cancelled
+       with a more specific !important selector. */
+/* White space kept on every side of every printed page */
+const SLIP_PAD = "12mm";
+
 const SLIP_PRINT_CSS = `
 @media print {
-  @page { size: A4; margin: 12mm; }
+  @page { size: A4 portrait; margin: 0; }
+  html body, html body .container { min-width: 0 !important; }
+  html, html body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
+  .order-slip { width: 100% !important; }
   .order-slip * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }`;
 
@@ -103,8 +118,21 @@ const Slip = ({ record, kind, user }) => {
   const list = (items) => (items.length ? items.join(", ") : "—");
 
   return (
-    <div className="order-slip" style={{ background: "#fff", color: C.text, fontFamily: "inherit", width: "186mm" }}>
+    <div className="order-slip" style={{ background: "#fff", color: C.text, fontFamily: "inherit", width: "210mm", padding: `0 ${SLIP_PAD}`, boxSizing: "border-box" }}>
       <style>{SLIP_PRINT_CSS}</style>
+      {/* Page frame: a table's <thead>/<tfoot> repeat on every printed page,
+          so the top and bottom padding holds on page 2+ too (plain padding
+          only applies at the very start and end of the slip). */}
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead>
+          <tr><td style={{ height: SLIP_PAD, padding: 0 }} /></tr>
+        </thead>
+        <tfoot>
+          <tr><td style={{ height: SLIP_PAD, padding: 0 }} /></tr>
+        </tfoot>
+        <tbody>
+          <tr>
+            <td style={{ padding: 0, verticalAlign: "top" }}>
       <div style={{ height: 5, background: C.brand, marginBottom: 14 }} />
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
         <div>
@@ -177,6 +205,10 @@ const Slip = ({ record, kind, user }) => {
           </table>
         </div>
       </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   );
 };

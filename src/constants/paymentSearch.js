@@ -5,6 +5,18 @@
  *   productRequestArray[]  — product-request and Ship For Me payments (bookingId)
  */
 
+/* The orders / bookings a paymentRequestApi entry pays for. 1688 order
+   payments list them in `pendingOrders`; product-request payments from the
+   customer site list the bookings in `productRequestArray` instead, so
+   reading only `pendingOrders` showed an empty invoice list and left the
+   request impossible to approve. */
+export const payableItemsOf = (paymentRequest) => {
+  if (!paymentRequest) return [];
+  const pending = paymentRequest.pendingOrders || [];
+  if (pending.length > 0) return pending;
+  return paymentRequest.productRequestArray || [];
+};
+
 /* Order / booking IDs the payment covers (not the payment's own id) */
 export const coveredIds = (paymentRequest) => {
   const ids = [];

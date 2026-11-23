@@ -106,7 +106,7 @@ export class MonthlyExpense extends Component {
                         onClick={(e) => this.clickActive(e, "1688-orders")}
                         style={{ fontSize: 25 }}
                       >
-                        1688 Orders
+                        Website Orders
                       </Tab>
 
                       <Tab

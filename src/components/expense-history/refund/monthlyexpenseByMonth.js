@@ -104,7 +104,7 @@ export class MonthlyExpenseByMonth extends Component {
                     >
                       <option value="">Filter by category </option>
                       <option value="">All</option>
-                      <option value="1688 Orders">1688 Orders</option>
+                      <option value="1688 Orders">Website Orders</option>
                       <option value="Product Request">Product Request</option>
                     </select>
                   </div>

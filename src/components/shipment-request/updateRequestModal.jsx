@@ -10,6 +10,13 @@ import {
 } from "../../firebase/firebase.utils";
 import { sendNotifications } from "../../firebase/fcmRestApi";
 import { statusDisplay } from "../../constants/statusDisplay";
+import CartonManager from "../common/cartons/CartonManager";
+import {
+  trackingNumbersOf,
+  legacyFieldsFromCartons,
+  cargoFieldsFromCartons,
+  cartonTotals,
+} from "../../constants/cartons";
 class UpdateRequestModal extends Component {
   constructor(props) {
     super(props);
@@ -18,6 +25,8 @@ class UpdateRequestModal extends Component {
       note: "",
       status: "",
       trackingNo: "",
+      trackingNumbers: [],
+      cartons: [],
       warehouse: "",
       shippingMark: "",
       cargoCompany: "",
@@ -70,6 +79,8 @@ class UpdateRequestModal extends Component {
           : "",
         status: singleRequest.status || "",
         trackingNo: singleRequest.trackingNo || "",
+        trackingNumbers: trackingNumbersOf(singleRequest),
+        cartons: singleRequest.cartons || [],
         warehouse: singleRequest.warehouse || "",
         shippingMark: singleRequest.shippingMark || "",
         cargoCompany: singleRequest.cargoCompany || "",
@@ -141,10 +152,14 @@ class UpdateRequestModal extends Component {
     await this.props.updateShipmentRequestRedux({
       ...this.props.singleRequest,
       ...this.state,
-      trackingNumbers: this.state.trackingNo
-        .split(",")
-        .map((t) => t.trim())
-        .filter(Boolean),
+      trackingNumbers: this.state.trackingNumbers,
+      trackingNo: this.state.trackingNumbers.join(","),
+      cartons: this.state.cartons,
+      ...(this.state.cartons.length
+        ? legacyFieldsFromCartons(this.state.cartons)
+        : {}),
+      /* per-carton cargo rate / charge (ALG or typed in the carton table) */
+      ...cargoFieldsFromCartons(this.state.cartons || []),
       shippingChargeCustomer: parseInt(
         (this.state.otherCost ? parseInt(this.state.otherCost) : 0) +
           this.state.receivedWeight * this.state.customerRate -
@@ -163,7 +178,11 @@ class UpdateRequestModal extends Component {
         : date.toLocaleTimeString("en-GB"),
       result: {
         perKg: this.state.perKg,
-        result: parseFloat(this.state.perKg) * parseFloat(singleRequest.weight),
+        /* booking estimate = rate × the customer's est. weight; older
+           bookings have no weight, which used to save NaN */
+        result: Number.isFinite(parseFloat(this.state.perKg) * parseFloat(singleRequest.weight))
+          ? parseFloat(this.state.perKg) * parseFloat(singleRequest.weight)
+          : null,
       },
       status: this.state.status || singleRequest.status,
       shipmentStatusScore,
@@ -192,6 +211,8 @@ class UpdateRequestModal extends Component {
       note: "",
       status: "",
       trackingNo: "",
+      trackingNumbers: [],
+      cartons: [],
       warehouse: "",
       shippingMark: "",
       cargoCompany: "",
@@ -339,7 +360,17 @@ class UpdateRequestModal extends Component {
   };
 
   /* Shared by the corner X and the Cancel button: reset the form, close. */
+  /* Play the closing animation, then reset and close for real. */
   closeModal = () => {
+    if (this.state.closing) return;
+    this.setState({ closing: true });
+    setTimeout(() => {
+      this.setState({ closing: false });
+      this.closeModalNow();
+    }, 200);
+  };
+
+  closeModalNow = () => {
     this.setState({
       unitPrice: "",
 
@@ -348,780 +379,335 @@ class UpdateRequestModal extends Component {
       status: "",
       orderId: "",
       trackingNo: "",
+      trackingNumbers: [],
+      cartons: [],
       warehouse: "",
     });
     this.props.startToggleModal(null);
   };
 
+  /* Live figure shown (read-only) and saved as shippingChargeCustomer — same
+     formula handleSubmit uses. */
+  customerTotal = () =>
+    parseInt(
+      (this.state.otherCost ? parseInt(this.state.otherCost) : 0) +
+        this.state.receivedWeight * this.state.customerRate -
+        this.state.refund -
+        this.state.discount
+    );
+
+  field = (label, name, { type = "text", placeholder, hint, span } = {}) => (
+    <label className={`urm-field ${span ? "urm-span-2" : ""}`}>
+      <span className="urm-label">{label}</span>
+      <input
+        type={type}
+        name={name}
+        className="urm-input"
+        placeholder={placeholder || label}
+        onChange={this.handleChange}
+        value={this.state[name]}
+        step={type === "number" ? "any" : undefined}
+      />
+      {hint && <span className="urm-hint">{hint}</span>}
+    </label>
+  );
+
   render() {
+    if (this.props.toggleModal) return null;
+    const req = this.props.singleRequest || {};
+    const estWeight = parseFloat(req.weight) > 0 ? req.weight : null;
+    const total = this.customerTotal();
+    /* cargo charge = sum of the cartons' charges (ALG or typed in the carton
+       table); older bookings without cartons fall back to the stored list */
+    const cargoTotal = (this.state.cartons || []).length
+      ? cartonTotals(this.state.cartons).cargoCharge
+      : String(this.state.shippingChargeCargo || "")
+          .split(",")
+          .reduce((a, v) => a + (parseFloat(v) || 0), 0);
+    const margin = cargoTotal ? (Number.isFinite(total) ? total : 0) - cargoTotal : null;
+    const tk = (n) => `৳${(Number.isFinite(n) ? n : 0).toLocaleString("en-IN")}`;
+
     return (
-      <>
-        <div
-          className={
-            this.props.toggleModal
-              ? "modal fade show"
-              : "modal fade show visible-modal"
-          }
-          id="request_popup"
-          tabIndex="-1"
-          role="dialog"
-          aria-hidden="true"
+      <div className={`urm-overlay ${this.state.closing ? "is-closing" : ""}`} role="dialog" aria-modal="true">
+        <form
+          className="urm-modal"
+          onSubmit={(e) => {
+            this.handleSubmit(e);
+          }}
         >
-          <div
-            className="modal-dialog modal-dialog-centered request_popup"
-            role="document"
-          >
-            <div
-              className="modal-content visible-modal-content-3"
-              style={{
-                backgroundColor: "rgb(68 0 97)",
-                maxHeight: 700,
-                overflowY: "scroll",
-              }}
-            >
-              <div className="modal-body p-0">
-                <section className="pos-rel bg-light-gray">
-                  <div className="container-fluid p-3">
-                    <a
-                      onClick={this.closeModal}
-                      className="close"
-                      data-dismiss="modal"
-                      aria-label="Close"
-                    >
-                      <i
-                        className="icofont-close-line"
-                        style={{ color: "#334155", fontSize: 22, cursor: "pointer" }}
-                      ></i>
-                    </a>
-                    <div className="d-lg-flex justify-content-end no-gutters mb-spacer-md">
-                      <div className="col">
-                        <div className="px-3 m-5">
-                          <h2
-                            className="h2-xl mb-3 fw-6 pb-2"
-                            style={{
-                              color: "white",
-                              textTransform: "none",
-                              fontSize: "200%",
-                              borderBottom: "2px dotted white",
-                            }}
-                          >
-                            Booking Id:{" "}
-                            {this.props.singleRequest &&
-                              this.props.singleRequest.bookingId}
-                          </h2>
-                          <form
-                            onSubmit={(e) => {
-                              this.handleSubmit(e);
-                            }}
-                            className="rounded-field mt-2"
-                          >
-                            <div className="form-row mb-2">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  SELECT CUSTOMER
-                                </label>
-                                <input
-                                  title="Please choose a package"
-                                  style={{ padding: 18 }}
-                                  type="text"
-                                  name="customer"
-                                  className="form-control"
-                                  placeholder="Enter customer Id"
-                                  aria-required="true"
-                                  aria-invalid="false"
-                                  onChange={this.handleChangeCustomer}
-                                  value={this.state.customer}
-                                  required
-                                  autoComplete="off"
-                                  onKeyDown={this.handleKeyDown}
-                                />
-                                {this.state.customer && (
-                                  <ul
-                                    className="below-searchbar-recommendation"
-                                    style={{
-                                      display: this.state.showSuggestion
-                                        ? "flex"
-                                        : "none",
-                                    }}
-                                  >
-                                    {this.renderShowSuggestion()}
-                                  </ul>
-                                )}
-                              </div>
-                            </div>
-                            <div className="form-row mb-2">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Per Kg
-                                </label>
-
-                                <input
-                                  type="text"
-                                  name="perKg"
-                                  className="form-control"
-                                  placeholder="Enter Rate/Kg"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.perKg}
-                                  required
-                                />
-                              </div>
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Tracking No
-                                </label>
-
-                                <input
-                                  type="text"
-                                  name="trackingNo"
-                                  className="form-control"
-                                  placeholder="tracking No"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.trackingNo}
-                                />
-                              </div>
-                            </div>
-
-                            <div className="form-row mb-2">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Change Status
-                                </label>
-
-                                <select
-                                  title=""
-                                  name="status"
-                                  className="custom-select"
-                                  aria-required="true"
-                                  aria-invalid="false"
-                                  onChange={this.handleChange}
-                                  style={{ fontSize: ".8rem" }}
-                                  value={this.state.status}
-                                  required
-                                >
-                                  <option value="">Change Status</option>
-                                  <option value="Rates Provided">
-                                    Rates Provided
-                                  </option>
-                                  <option value="Received in Warehouse">
-                                    Received in Warehouse
-                                  </option>
-                                  <option value="Ready for fly">
-                                    Ready for fly
-                                  </option>
-                                  <option value="Bangladesh customs">
-                                    Bangladesh customs
-                                  </option>
-                                  <option value="Bangladesh warehouse">
-                                    Custom released
-                                  </option>
-                                  <option value="Paicart warehouse">
-                                    Paicart warehouse
-                                  </option>
-                                  <option value="Delivered">Delivered</option>
-                                  <option value="Reject">Reject</option>
-                                </select>
-                              </div>
-                            </div>
-                            <div className="form-row mb-2">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Select Warehouse
-                                </label>
-
-                                <select
-                                  title=""
-                                  style={{ fontSize: ".8rem" }}
-                                  name="warehouse"
-                                  className="custom-select"
-                                  aria-required="true"
-                                  aria-invalid="false"
-                                  onChange={this.handleChange}
-                                  value={this.state.warehouse}
-                                >
-                                  <option value="">Select Warehouse</option>
-                                  {this.props.warehouses.map((warehouse) => (
-                                    <option
-                                      value={`${warehouse.country}-${warehouse.address}`}
-                                    >
-                                      {warehouse.companyName}-
-                                      {warehouse.country}-{warehouse.address}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                            </div>
-
-                            <div className="form-row mb-2">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Note{" "}
-                                </label>
-                                <textarea
-                                  type="text"
-                                  name="note"
-                                  className="form-control"
-                                  placeholder="Enter Additional Note"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.note}
-                                />
-                              </div>
-                            </div>
-                            <div
-                              className="form-row"
-                              style={{
-                                color: "white",
-                                marginTop: 10,
-                                marginBottom: 10,
-                                borderBottom: "1px solid white",
-                              }}
-                            >
-                              Shipping Information
-                            </div>
-                            <div className="form-row mb-2">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Shipping Mark
-                                </label>
-
-                                <input
-                                  type="text"
-                                  name="shippingMark"
-                                  className="form-control"
-                                  placeholder="Shipping Mark"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.shippingMark}
-                                />
-                              </div>
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Cargo company
-                                </label>
-
-                                <input
-                                  type="text"
-                                  name="cargoCompany"
-                                  className="form-control"
-                                  placeholder="Cargo company"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.cargoCompany}
-                                />
-                              </div>
-                            </div>
-                            <div className="form-row mb-2">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Waybill Picture
-                                </label>
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    flexDirection: "row",
-                                    alignItems: "center",
-                                  }}
-                                >
-                                  <input
-                                    type="file"
-                                    accept="image/*"
-                                    onChange={this._handleWaybillChange}
-                                  />
-                                  {this.state.waybillImage_loader && (
-                                    <span
-                                      style={{ color: "white", marginLeft: 8 }}
-                                    >
-                                      Uploading…
-                                    </span>
-                                  )}
-                                  {this.state.waybillImage && (
-                                    <img
-                                      src={this.state.waybillImage}
-                                      alt="waybill"
-                                      style={{
-                                        width: 40,
-                                        height: 40,
-                                        objectFit: "cover",
-                                        borderRadius: 4,
-                                        marginLeft: 8,
-                                      }}
-                                    />
-                                  )}
-                                </div>
-                              </div>
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Packing List (PDF/Image/Word)
-                                </label>
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    flexDirection: "row",
-                                    alignItems: "center",
-                                  }}
-                                >
-                                  <input
-                                    type="file"
-                                    accept="image/*,application/pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                                    onChange={this._handlePackingListChange}
-                                  />
-                                  {this.state.packingList_loader && (
-                                    <span
-                                      style={{ color: "white", marginLeft: 8 }}
-                                    >
-                                      Uploading…
-                                    </span>
-                                  )}
-                                  {this.state.packingListUrl && (
-                                    <a
-                                      href={this.state.packingListUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      style={{ color: "white", marginLeft: 8 }}
-                                    >
-                                      View file
-                                    </a>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                            <div className="form-row mb-2">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Lot Number
-                                </label>
-
-                                <input
-                                  type="text"
-                                  name="lotNo"
-                                  className="form-control"
-                                  placeholder="Lot Number"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.lotNo}
-                                />
-                              </div>
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Carton Number
-                                </label>
-
-                                <input
-                                  type="text"
-                                  name="ctnNo"
-                                  className="form-control"
-                                  placeholder="Carton Number"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.ctnNo}
-                                />
-                              </div>
-                            </div>
-                            <div className="form-row mb-2">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Received weight
-                                </label>
-
-                                <input
-                                  type="number"
-                                  name="receivedWeight"
-                                  className="form-control"
-                                  placeholder="Received weight"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.receivedWeight}
-                                />
-                              </div>
-                            </div>
-                            <div className="form-row mb-2">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Cargo rate
-                                </label>
-
-                                <input
-                                  type="text"
-                                  name="cargoRate"
-                                  className="form-control"
-                                  placeholder="Cargo Rate"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.cargoRate}
-                                />
-                              </div>
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Customer rate
-                                </label>
-
-                                <input
-                                  type="number"
-                                  name="customerRate"
-                                  className="form-control"
-                                  placeholder="Customer rate"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.customerRate}
-                                />
-                              </div>
-                            </div>
-                            <div className="form-row mb-2">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Refund amount
-                                </label>
-
-                                <input
-                                  type="number"
-                                  name="refund"
-                                  className="form-control"
-                                  placeholder="Refund amount"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.refund}
-                                />
-                              </div>
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Discount
-                                </label>
-
-                                <input
-                                  type="number"
-                                  name="discount"
-                                  className="form-control"
-                                  placeholder="Discount"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.discount}
-                                />
-                              </div>
-                            </div>
-                            <div className="form-row mb-2">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Packaging & other cost
-                                </label>
-
-                                <input
-                                  type="number"
-                                  name="otherCost"
-                                  className="form-control"
-                                  placeholder="Packaging & other cost"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.otherCost}
-                                />
-                              </div>
-                            </div>
-                            <div className="form-row mb-2">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Total shipping charge (cargo company)
-                                </label>
-
-                                <input
-                                  type="text"
-                                  name="shippingChargeCargo"
-                                  className="form-control"
-                                  placeholder="Total shipping charge (cargo company)"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.shippingChargeCargo}
-                                />
-                              </div>
-                            </div>
-                            <div className="form-row mb-2">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Total shipping charge (customer)
-                                </label>
-
-                                <input
-                                  type="text"
-                                  name="shippingChargeCustomer"
-                                  className="form-control"
-                                  placeholder="Total shipping charge (customer)"
-                                  style={{ fontSize: ".8rem" }}
-                                  value={parseInt(
-                                    (this.state.otherCost
-                                      ? parseInt(this.state.otherCost)
-                                      : 0) +
-                                      this.state.receivedWeight *
-                                        this.state.customerRate -
-                                      this.state.refund -
-                                      this.state.discount
-                                  )}
-                                  readOnly={true}
-                                />
-                              </div>
-                            </div>
-                            <div className="form-row mb-2">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Abroad warehouse address
-                                </label>
-                                <textarea
-                                  type="text"
-                                  name="abroadWarehouseAddress"
-                                  className="form-control"
-                                  placeholder="Abroad warehouse address"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.abroadWarehouseAddress}
-                                />
-                              </div>
-                            </div>
-                            <div className="form-row mb-2">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Bangladesh warehouse address
-                                </label>
-                                <textarea
-                                  type="text"
-                                  name="bangladeshWarehouseAddress"
-                                  className="form-control"
-                                  placeholder="Bangladesh warehouse address"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.bangladeshWarehouseAddress}
-                                />
-                              </div>
-                            </div>
-                            <div className="form-row mb-2">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Delivered Through (include reference)
-                                </label>
-                                <textarea
-                                  type="text"
-                                  name="deliveredBy"
-                                  className="form-control"
-                                  placeholder="Enter delivered by"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.deliveredBy}
-                                />
-                              </div>
-                            </div>
-                            <div className="form-row mb-2">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Refund note
-                                </label>
-                                <textarea
-                                  type="text"
-                                  name="refundNote"
-                                  className="form-control"
-                                  placeholder="Enter refund note"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.refundNote}
-                                />
-                              </div>
-                            </div>
-
-                            <div className="form-row">
-                              <div
-                                className="col pt-3"
-                                style={{
-                                  display: "flex",
-                                  justifyContent: "flex-end",
-                                }}
-                              >
-                                <button
-                                  type="submit"
-                                  style={{ display: "none" }}
-                                  disabled
-                                  className="btn btn-secondary"
-                                >
-                                  Update
-                                  <i className="icofont-rounded-right"></i>
-                                </button>
-                                <button
-                                  type="button"
-                                  className="btn btn-light"
-                                  onClick={this.closeModal}
-                                  data-dismiss="modal"
-                                  style={{
-                                    marginRight: 8,
-                                    border: "1px solid #cbd5e1",
-                                    color: "#334155",
-                                  }}
-                                >
-                                  Cancel
-                                </button>
-                                <button
-                                  type="submit"
-                                  className="btn btn-secondary"
-                                >
-                                  Update
-                                  <i className="icofont-rounded-right"></i>
-                                </button>
-                              </div>
-                            </div>
-                          </form>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </section>
+          {/* Header */}
+          <div className="urm-head">
+            {req.imageUrl ? (
+              <img className="urm-thumb" src={req.imageUrl} alt="" />
+            ) : (
+              <div className="urm-thumb urm-thumb-empty">📦</div>
+            )}
+            <div className="urm-head-text">
+              <div className="urm-kicker">Update shipment booking</div>
+              <h3 className="urm-title">Booking #{req.bookingId}</h3>
+              <div className="urm-chips">
+                {req.othersProductName && <span className="urm-chip">{req.othersProductName}</span>}
+                {req.status && <span className="urm-chip">Status: {statusDisplay(req.status)}</span>}
+                {(req.shipBy || req.method) && (
+                  <span className="urm-chip">{String(req.shipBy || req.method).toUpperCase()}</span>
+                )}
+                {req.ctnQuantity && <span className="urm-chip">{req.ctnQuantity} box</span>}
+                {req.totalCbm && <span className="urm-chip">{req.totalCbm} cbm</span>}
+                {estWeight && <span className="urm-chip">Est. {estWeight} kg</span>}
+                {req.validTo && <span className="urm-chip">Valid to {req.validTo}</span>}
               </div>
             </div>
+            <button type="button" className="urm-x" onClick={this.closeModal} aria-label="Close">
+              &times;
+            </button>
           </div>
-        </div>
-      </>
+
+          <div className="urm-body">
+            {/* Customer & status */}
+            <section className="urm-card">
+              <div className="urm-card-title"><span className="urm-dot" />Customer &amp; Status</div>
+              <div className="urm-grid">
+                <label className="urm-field urm-span-2 urm-pos">
+                  <span className="urm-label">Customer *</span>
+                  <input
+                    type="text"
+                    name="customer"
+                    className="urm-input"
+                    placeholder="Search by customer ID or name"
+                    onChange={this.handleChangeCustomer}
+                    value={this.state.customer}
+                    required
+                    autoComplete="off"
+                    onKeyDown={this.handleKeyDown}
+                  />
+                  {this.state.customer && (
+                    <ul
+                      className="urm-suggest"
+                      style={{ display: this.state.showSuggestion ? "block" : "none" }}
+                    >
+                      {this.renderShowSuggestion()}
+                    </ul>
+                  )}
+                </label>
+                <label className="urm-field">
+                  <span className="urm-label">Status *</span>
+                  <select
+                    name="status"
+                    className="urm-input"
+                    onChange={this.handleChange}
+                    value={this.state.status}
+                    required
+                  >
+                    <option value="">Change status</option>
+                    <option value="Rates Provided">Rates Provided</option>
+                    <option value="Received in Warehouse">Received in Warehouse</option>
+                    <option value="Ready for fly">Ready for fly</option>
+                    <option value="Bangladesh customs">Bangladesh customs</option>
+                    <option value="Bangladesh warehouse">Custom released</option>
+                    <option value="Paicart warehouse">Paicart warehouse</option>
+                    <option value="Delivered">Delivered</option>
+                    <option value="Reject">Reject</option>
+                  </select>
+                </label>
+                <label className="urm-field">
+                  <span className="urm-label">Warehouse</span>
+                  <select
+                    name="warehouse"
+                    className="urm-input"
+                    onChange={this.handleChange}
+                    value={this.state.warehouse}
+                  >
+                    <option value="">Select warehouse</option>
+                    {this.props.warehouses.map((warehouse) => (
+                      <option
+                        key={`${warehouse.country}-${warehouse.address}`}
+                        value={`${warehouse.country}-${warehouse.address}`}
+                      >
+                        {warehouse.companyName}-{warehouse.country}-{warehouse.address}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {this.field("Rate per kg (booking)", "perKg", { placeholder: "Enter rate/kg" })}
+                <label className="urm-field urm-span-2">
+                  <span className="urm-label">Note</span>
+                  <textarea
+                    name="note"
+                    className="urm-input urm-textarea"
+                    placeholder="Additional note for this booking"
+                    onChange={this.handleChange}
+                    value={this.state.note}
+                  />
+                </label>
+              </div>
+            </section>
+
+            {/* Shipping information */}
+            <section className="urm-card">
+              <div className="urm-card-title"><span className="urm-dot" />Shipping Information</div>
+              <div className="urm-grid">
+                {this.field("Shipping Mark", "shippingMark")}
+                {this.field("Cargo company", "cargoCompany")}
+                {this.field("Lot Number", "lotNo")}
+                {this.field("Carton Number", "ctnNo")}
+                <div className="urm-field">
+                  <span className="urm-label">Waybill Picture</span>
+                  <label className="urm-upload">
+                    {this.state.waybillImage ? (
+                      <img src={this.state.waybillImage} alt="waybill" className="urm-upload-preview" />
+                    ) : (
+                      <span className="urm-upload-icon">🖼️</span>
+                    )}
+                    <span className="urm-upload-text">
+                      {this.state.waybillImage_loader
+                        ? "Uploading…"
+                        : this.state.waybillImage
+                        ? "Replace image"
+                        : "Upload image"}
+                    </span>
+                    <input type="file" accept="image/*" onChange={this._handleWaybillChange} hidden />
+                  </label>
+                </div>
+                <div className="urm-field">
+                  <span className="urm-label">Packing List (PDF / Image / Word)</span>
+                  <label className="urm-upload">
+                    <span className="urm-upload-icon">📄</span>
+                    <span className="urm-upload-text">
+                      {this.state.packingList_loader
+                        ? "Uploading…"
+                        : this.state.packingListUrl
+                        ? "Replace file"
+                        : "Upload file"}
+                    </span>
+                    {this.state.packingListUrl && !this.state.packingList_loader && (
+                      <a
+                        href={this.state.packingListUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="urm-upload-link"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        View ↗
+                      </a>
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                      onChange={this._handlePackingListChange}
+                      hidden
+                    />
+                  </label>
+                </div>
+              </div>
+            </section>
+
+            {/* Tracking numbers & cartons */}
+            <section className="urm-card urm-span-full">
+              <div className="urm-card-title"><span className="urm-dot" />Tracking &amp; Cartons</div>
+              <CartonManager
+                trackingNumbers={this.state.trackingNumbers}
+                cartons={this.state.cartons}
+                onChange={({ trackingNumbers, cartons }) =>
+                  this.setState({ trackingNumbers, cartons })
+                }
+                estWeight={estWeight}
+                onUseTotalWeight={(kg) => this.setState({ receivedWeight: kg })}
+              />
+            </section>
+
+            {/* Weight & charges */}
+            <section className="urm-card urm-span-full">
+              <div className="urm-card-title"><span className="urm-dot" />Weight &amp; Charges</div>
+              <div className="urm-grid urm-grid-4">
+                {this.field("Received (actual) weight, kg", "receivedWeight", {
+                  type: "number",
+                  placeholder: "Actual weight",
+                  hint: estWeight ? `Customer est. ${estWeight} kg` : "Customer gave no estimate",
+                })}
+                {this.field("Customer rate / kg", "customerRate", { type: "number" })}
+                {this.field("Packaging & other cost", "otherCost", { type: "number" })}
+                {this.field("Discount", "discount", { type: "number" })}
+                {this.field("Refund amount", "refund", { type: "number" })}
+                <label className="urm-field">
+                  <span className="urm-label">Shipping charge (customer)</span>
+                  <input
+                    type="text"
+                    name="shippingChargeCustomer"
+                    className="urm-input urm-readonly"
+                    value={Number.isFinite(total) ? total : 0}
+                    readOnly
+                  />
+                  <span className="urm-hint">Calculated automatically</span>
+                </label>
+              </div>
+              <div className="urm-summary">
+                <div className="urm-sum-item">
+                  <span>Weight × rate</span>
+                  <b>
+                    {this.state.receivedWeight || 0} kg × ৳{this.state.customerRate || 0}
+                  </b>
+                </div>
+                <div className="urm-sum-item">
+                  <span>+ Other cost</span>
+                  <b>{tk(parseInt(this.state.otherCost) || 0)}</b>
+                </div>
+                <div className="urm-sum-item">
+                  <span>− Discount &amp; refund</span>
+                  <b>{tk((parseFloat(this.state.discount) || 0) + (parseFloat(this.state.refund) || 0))}</b>
+                </div>
+                <div className="urm-sum-item urm-sum-total">
+                  <span>Customer pays</span>
+                  <b>{tk(total)}</b>
+                </div>
+                {margin !== null && (
+                  <div className={`urm-sum-item ${margin >= 0 ? "urm-pos-margin" : "urm-neg-margin"}`}>
+                    <span>Margin vs cargo</span>
+                    <b>{margin >= 0 ? "" : "−"}{tk(Math.abs(margin))}</b>
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {/* Addresses & delivery */}
+            <section className="urm-card urm-span-full">
+              <div className="urm-card-title"><span className="urm-dot" />Addresses, Delivery &amp; Refund</div>
+              <div className="urm-grid urm-grid-3">
+                {this.field("Abroad warehouse address", "abroadWarehouseAddress")}
+                {this.field("Bangladesh warehouse address", "bangladeshWarehouseAddress")}
+                {this.field("Delivered by", "deliveredBy")}
+                <label className="urm-field urm-span-3">
+                  <span className="urm-label">Refund note</span>
+                  <textarea
+                    name="refundNote"
+                    className="urm-input urm-textarea"
+                    placeholder="Enter refund note"
+                    onChange={this.handleChange}
+                    value={this.state.refundNote}
+                  />
+                </label>
+              </div>
+            </section>
+          </div>
+
+          {/* Footer */}
+          <div className="urm-foot">
+            <span className="urm-foot-total">
+              Customer pays <b>{tk(total)}</b>
+            </span>
+            <div className="urm-foot-actions">
+              <button type="button" className="urm-btn urm-btn-ghost" onClick={this.closeModal}>
+                Cancel
+              </button>
+              <button type="submit" className="urm-btn urm-btn-primary">
+                Update booking →
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
     );
   }
 }
-
 const mapStateToProps = (state, ownProps) => {
   return {
     singleLotFromRedux: ownProps.singleLot

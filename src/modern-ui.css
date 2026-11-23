@@ -1,0 +1,170 @@
+/* Site-wide polish for the admin panel: modern toasts and animated modals.
+ *
+ * Loaded LAST from src/index.js so it overrides react-toastify's and
+ * Bootstrap's defaults on every page without touching the ~150 components
+ * that render a <ToastContainer> or a modal.
+ */
+
+/* ── Toasts (react-toastify v5) ─────────────────────────────────────── */
+.Toastify__toast-container {
+  width: 380px;
+  padding: 8px;
+}
+.Toastify__toast-container .Toastify__toast {
+  position: relative;
+  min-height: 62px;
+  margin-bottom: 12px;
+  padding: 12px 12px 14px 56px;
+  border-radius: 14px;
+  border: 1px solid #eef1f5;
+  background: #fff;
+  color: #0f172a;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, .16), 0 2px 6px rgba(15, 23, 42, .06);
+  overflow: hidden;
+  cursor: default;
+}
+/* status icon */
+.Toastify__toast-container .Toastify__toast::before {
+  content: "i";
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  width: 30px;
+  height: 30px;
+  margin-top: -15px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 900;
+  color: #fff;
+  background: #3b82f6;
+  box-shadow: 0 0 0 5px rgba(59, 130, 246, .14);
+}
+/* thin coloured edge */
+.Toastify__toast-container .Toastify__toast::after {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 4px;
+  background: #3b82f6;
+}
+.Toastify__toast-container .Toastify__toast--success::before { content: "✓"; background: #16a34a; box-shadow: 0 0 0 5px rgba(22, 163, 74, .14); }
+.Toastify__toast-container .Toastify__toast--success::after  { background: #16a34a; }
+.Toastify__toast-container .Toastify__toast--error::before   { content: "✕"; font-size: 13px; background: #dc2626; box-shadow: 0 0 0 5px rgba(220, 38, 38, .14); }
+.Toastify__toast-container .Toastify__toast--error::after    { background: #dc2626; }
+.Toastify__toast-container .Toastify__toast--warning::before { content: "!"; background: #f59e0b; box-shadow: 0 0 0 5px rgba(245, 158, 11, .16); }
+.Toastify__toast-container .Toastify__toast--warning::after  { background: #f59e0b; }
+.Toastify__toast-container .Toastify__toast--info::before    { content: "i"; background: #2563eb; }
+.Toastify__toast-container .Toastify__toast--default::before { content: "•"; font-size: 22px; background: #ff6a00; box-shadow: 0 0 0 5px rgba(255, 106, 0, .14); }
+.Toastify__toast-container .Toastify__toast--default::after  { background: #ff6a00; }
+.Toastify__toast-container .Toastify__toast--dark { background: #0f172a; color: #fff; border-color: #0f172a; }
+
+.Toastify__toast-container .Toastify__toast-body {
+  margin: auto 0;
+  padding: 0 6px 0 0;
+  color: inherit;
+  word-break: break-word;
+}
+.Toastify__toast-container .Toastify__close-button {
+  align-self: flex-start;
+  color: #94a3b8;
+  opacity: .8;
+  font-size: 13px;
+  font-weight: 400;
+  transition: color .15s, opacity .15s, transform .2s;
+}
+.Toastify__toast-container .Toastify__close-button:hover { color: #0f172a; opacity: 1; transform: rotate(90deg); }
+
+.Toastify__toast-container .Toastify__progress-bar {
+  height: 3px;
+  left: 4px;
+  opacity: .85 !important;
+  background: #3b82f6;
+}
+.Toastify__toast-container .Toastify__progress-bar--success { background: #16a34a; }
+.Toastify__toast-container .Toastify__progress-bar--error   { background: #dc2626; }
+.Toastify__toast-container .Toastify__progress-bar--warning { background: #f59e0b; }
+.Toastify__toast-container .Toastify__progress-bar--default { background: #ff6a00; }
+
+/* smooth slide/scale instead of the default bounce */
+.Toastify__toast-container [class*="Toastify__bounce-enter"] { animation-name: pcToastIn !important; animation-timing-function: cubic-bezier(.2, .9, .3, 1.15) !important; }
+.Toastify__toast-container [class*="Toastify__bounce-exit"]  { animation-name: pcToastOut !important; animation-timing-function: ease-in !important; }
+@keyframes pcToastIn {
+  from { opacity: 0; transform: translateX(28px) scale(.96); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes pcToastOut {
+  from { opacity: 1; transform: none; max-height: 200px; }
+  to   { opacity: 0; transform: translateX(28px) scale(.96); max-height: 0; margin-bottom: 0; padding-top: 0; padding-bottom: 0; }
+}
+@media (max-width: 480px) {
+  .Toastify__toast-container { width: 100vw; padding: 8px; left: 0; margin: 0; }
+  .Toastify__toast-container .Toastify__toast { margin-bottom: 8px; }
+}
+
+/* ── Modals ─────────────────────────────────────────────────────────── */
+/* Bootstrap-driven modals (data-toggle="modal"): Bootstrap already toggles
+   .show around a fade; give the dialog a scale + lift both ways. */
+.modal.fade {
+  transition: opacity .22s ease, display .22s allow-discrete;
+}
+.modal.fade .modal-dialog {
+  opacity: 0;
+  transform: translateY(26px) scale(.96);
+  transition: transform .3s cubic-bezier(.2, .9, .3, 1.15), opacity .22s ease;
+}
+.modal.show .modal-dialog {
+  opacity: 1;
+  transform: none;
+}
+.modal-backdrop.fade { transition: opacity .22s ease; }
+.modal-backdrop.show { opacity: .55; backdrop-filter: blur(2px); }
+
+/* Class-toggled modals: the many components that render
+   className={toggle ? "modal fade show" : "modal fade show visible-modal"}.
+   They jump straight between display:none and display:block, so animate
+   that switch with @starting-style (open) and allow-discrete (close).
+   A closed one is ".modal.show" without .visible-modal and without the
+   inline display Bootstrap sets on modals it opens itself. */
+.modal.visible-modal {
+  opacity: 1;
+}
+.modal.visible-modal .modal-dialog {
+  opacity: 1;
+  transform: none;
+}
+.modal.show:not(.visible-modal):not([style*="display: block"]) {
+  opacity: 0;
+}
+.modal.show:not(.visible-modal):not([style*="display: block"]) .modal-dialog {
+  opacity: 0;
+  transform: translateY(18px) scale(.97);
+}
+@starting-style {
+  .modal.visible-modal { opacity: 0; }
+  .modal.visible-modal .modal-dialog { opacity: 0; transform: translateY(26px) scale(.96); }
+}
+
+/* react-responsive-modal (category pages): it fades on its own; add the lift */
+[class*="styles_modal__"] {
+  animation: pcModalIn .3s cubic-bezier(.2, .9, .3, 1.15) both;
+  border-radius: 14px;
+}
+@keyframes pcModalIn {
+  from { opacity: 0; transform: translateY(26px) scale(.96); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal.fade, .modal.fade .modal-dialog, .modal-backdrop.fade,
+  .Toastify__toast-container [class*="Toastify__bounce"] , [class*="styles_modal__"] {
+    transition-duration: .01s !important;
+    animation-duration: .01s !important;
+  }
+}

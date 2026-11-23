@@ -322,3 +322,50 @@
   border-radius: 8px;
   border: 1px solid #eef2f7;
 }
+
+/* 1688/Taobao orders table: grouped columns stack several pieces per cell,
+ * so cells must grow in height instead of clipping to one line. */
+.list-modern .ReactTable.orders-1688-table .rt-tbody .rt-td {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  align-items: flex-start;
+  word-break: break-word;
+}
+
+.list-modern .ReactTable.orders-1688-table .rt-thead.-header .rt-th {
+  text-align: left;
+}
+
+/* The admin theme centres every row's cells vertically (.rt-tr align-items:
+ * center) and pads every nested div by 5px (.rt-td div), so content drifted
+ * by nesting depth. Top-align and reset that padding for this table; inline
+ * paddings on badges and buttons still apply. */
+.list-modern .ReactTable.orders-1688-table .rt-tbody .rt-tr {
+  align-items: stretch;
+}
+
+.list-modern .ReactTable.orders-1688-table .rt-tbody .rt-td div {
+  padding: 0;
+}
+
+/* Same 16px inset for header text and cell content, so every column's
+ * content lines up under its heading. */
+.list-modern .ReactTable.orders-1688-table .rt-thead.-header .rt-th {
+  padding: 0;
+}
+
+.list-modern .ReactTable.orders-1688-table .rt-resizable-header-content {
+  padding: 14px 16px;
+}
+
+.list-modern .ReactTable.orders-1688-table .rt-tbody .rt-td {
+  padding: 16px;
+  line-height: 1.6;
+}
+
+/* The theme forces 10px (!important) on the last header; keep it at 16px
+ * like the rest so the Actions heading lines up with its buttons. */
+.list-modern .ReactTable.orders-1688-table .rt-th:last-child .rt-resizable-header-content {
+  padding: 14px 16px !important;
+}

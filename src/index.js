@@ -70,6 +70,10 @@ import PaymentRequestOrder from "./components/payment-request/paymentRequestOrde
 import RefundRequestOrder from "./components/payment-request/refundRequestOrder";
 import AfterSale from "./components/payment-request/afterSale.js";
 import CargoCollection from "./components/cargo-collection/cargoCollection.jsx";
+import ClientDue from "./components/client-due/clientDue.jsx";
+import ClientBills from "./components/accounts/clientBills.jsx";
+import AppDialogHost from "./components/common/appDialog.jsx";
+import DeliveryRequests from "./components/delivery-requests/deliveryRequests.jsx";
 import Message from "./components/messages/App";
 import D2DRates from "./components/d2d-rates/d2dRates";
 import D2DRates2 from "./components/1688-rates/d2dRates";
@@ -78,6 +82,7 @@ import PartialPayment from "./components/products/physical/partialPayments.js";
 import SiteDiscount from "./components/products/physical/siteDiscount.js";
 import PaymentLink from "./components/products/physical/paymentLink.js";
 import ProductRequestPayments from "./components/product-requests/paymentBatches.jsx";
+import ParcelDetailsPage from "./components/common/parcelDetails/ParcelDetailsPage.jsx";
 import AllCampaigns from "./components/products/physical/allCampaigns";
 import AllHomeCategories from "./components/products/physical/homeCategory";
 import Banners from "./components/products/physical/banner";
@@ -137,6 +142,8 @@ import PackingList from "./components/products/physical/packingList.js";
 import PackingList_BD from "./components/products/physical/packingList-bd.js";
 import Promotion from "./components/expense-history/promotion/promotion.js";
 import PromotionMonth from "./components/expense-history/promotion/monthlyexpense";
+/* Site-wide toast + modal styling — must stay the LAST import so it wins */
+import "./modern-ui.css";
 class Root extends Component {
   constructor(props) {
     super(props);
@@ -485,6 +492,22 @@ class Root extends Component {
                   path={`${process.env.PUBLIC_URL}/invoice`}
                   component={Invoice}
                 />
+                {/* Details pages — declared before the /:status list routes */}
+                <Route
+                  exact
+                  path={`${process.env.PUBLIC_URL}/shipment-request/details/:bookingId`}
+                  render={(props) => <ParcelDetailsPage {...props} kind="ship" />}
+                />
+                <Route
+                  exact
+                  path={`${process.env.PUBLIC_URL}/1688-taobao-orders/details/:orderId`}
+                  render={(props) => <ParcelDetailsPage {...props} kind="order" />}
+                />
+                <Route
+                  exact
+                  path={`${process.env.PUBLIC_URL}/product-request/details/:bookingId`}
+                  render={(props) => <ParcelDetailsPage {...props} kind="request" />}
+                />
                 <Route
                   exact
                   path={`${process.env.PUBLIC_URL}/product-request/:orderStatus`}
@@ -581,6 +604,24 @@ class Root extends Component {
                   exact
                   path={`${process.env.PUBLIC_URL}/cargo-collection`}
                   component={CargoCollection}
+                />
+
+                <Route
+                  exact
+                  path={`${process.env.PUBLIC_URL}/client-due`}
+                  component={ClientDue}
+                />
+
+                <Route
+                  exact
+                  path={`${process.env.PUBLIC_URL}/accounts/client-bills`}
+                  component={ClientBills}
+                />
+
+                <Route
+                  exact
+                  path={`${process.env.PUBLIC_URL}/delivery-requests`}
+                  component={DeliveryRequests}
                 />
 
                 <Route
@@ -772,6 +813,8 @@ class Root extends Component {
             </Switch>
           </ScrollContext>
         </BrowserRouter>
+        {/* Takes over window.alert app-wide with a styled dialog */}
+        <AppDialogHost />
       </Provider>
     );
   }

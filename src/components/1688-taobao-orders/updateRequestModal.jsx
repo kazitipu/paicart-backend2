@@ -12,6 +12,13 @@ import {
 } from "../../firebase/firebase.utils";
 import { sendNotifications } from "../../firebase/fcmRestApi";
 import { statusDisplay } from "../../constants/statusDisplay";
+import CartonManager from "../common/cartons/CartonManager";
+import {
+  trackingNumbersOf,
+  legacyFieldsFromCartons,
+  cargoFieldsFromCartons,
+  cartonTotals,
+} from "../../constants/cartons";
 class UpdateRequestModal extends Component {
   constructor(props) {
     super(props);
@@ -21,6 +28,8 @@ class UpdateRequestModal extends Component {
       orderStatus: "",
       orderNumber: "",
       trackingNo: "",
+      trackingNumbers: [],
+      cartons: [],
       purchaseLink: "",
       purchasingSupplier: "",
       purchasingSupplierPayment: "",
@@ -57,6 +66,8 @@ class UpdateRequestModal extends Component {
         orderStatus: order.orderStatus || "",
         orderNumber: order.orderNumber || "",
         trackingNo: order.trackingNo || "",
+        trackingNumbers: trackingNumbersOf(order),
+        cartons: order.cartons || [],
         purchaseLink: order.purchaseLink || "",
         purchasingSupplier: order.purchasingSupplier || "",
         purchasingSupplierPayment: order.purchasingSupplierPayment || "",
@@ -112,6 +123,14 @@ class UpdateRequestModal extends Component {
     await this.props.updateOrderApiRedux({
       ...order,
       ...this.state,
+      trackingNumbers: this.state.trackingNumbers || [],
+      trackingNo: (this.state.trackingNumbers || []).join(","),
+      cartons: this.state.cartons || [],
+      ...(this.state.cartons && this.state.cartons.length
+        ? legacyFieldsFromCartons(this.state.cartons)
+        : {}),
+      /* per-carton cargo rate / charge (ALG or typed in the carton table) */
+      ...cargoFieldsFromCartons(this.state.cartons || []),
       // Keep actualTotal (the customer-facing "Product Subtotal" reference)
       // in sync whenever an admin manually corrects the order total here —
       // otherwise the customer panel keeps showing the old price forever,
@@ -154,6 +173,8 @@ class UpdateRequestModal extends Component {
       orderStatus: "",
       orderNumber: "",
       trackingNo: "",
+      trackingNumbers: [],
+      cartons: [],
       purchaseLink: "",
       purchasingSupplier: "",
       purchasingSupplierPayment: "",
@@ -228,6 +249,8 @@ class UpdateRequestModal extends Component {
       orderStatus: "",
       orderNumber: "",
       trackingNo: "",
+      trackingNumbers: [],
+      cartons: [],
     });
     this.props.startToggleModal(null);
   };
@@ -439,27 +462,41 @@ class UpdateRequestModal extends Component {
                                   value={this.state.orderNumber}
                                 />
                               </div>
+                            </div>
 
-                              <div className="col">
+                            <div className="form-row mb-4">
+                              <div className="col-12">
                                 <label
                                   style={{
                                     color: "white",
-                                    marginBottom: 0,
+                                    marginBottom: 4,
                                     fontSize: 13,
                                   }}
                                 >
-                                  Tracking No (china website)
+                                  Tracking numbers &amp; cartons
                                 </label>
-
-                                <input
-                                  type="text"
-                                  name="trackingNo"
-                                  className="form-control"
-                                  placeholder="Enter 1688/taobao/aliexpress tracking No"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.trackingNo}
-                                />
+                                <div
+                                  style={{
+                                    background: "#f6f8fb",
+                                    borderRadius: 14,
+                                    padding: 12,
+                                    border: "1px solid #e6ebf2",
+                                  }}
+                                >
+                                  <CartonManager
+                                    trackingNumbers={this.state.trackingNumbers || []}
+                                    cartons={this.state.cartons || []}
+                                    onChange={({ trackingNumbers, cartons }) =>
+                                      this.setState({ trackingNumbers, cartons })
+                                    }
+                                    onUseTotalWeight={(kg) => this.setState({ receivedWeight: kg })}
+                                    fetchKey={
+                                      !this.props.toggleModal && order
+                                        ? order.orderId || order.bookingId || "open"
+                                        : null
+                                    }
+                                  />
+                                </div>
                               </div>
                             </div>
 
@@ -731,27 +768,6 @@ class UpdateRequestModal extends Component {
                                     fontSize: 13,
                                   }}
                                 >
-                                  Cargo rate
-                                </label>
-
-                                <input
-                                  type="text"
-                                  name="cargoRate"
-                                  className="form-control"
-                                  placeholder="Cargo Rate"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.cargoRate}
-                                />
-                              </div>
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
                                   Customs & Shipping rate
                                 </label>
 
@@ -830,29 +846,6 @@ class UpdateRequestModal extends Component {
                                   style={{ fontSize: ".8rem" }}
                                   onChange={this.handleChange}
                                   value={this.state.otherCost}
-                                />
-                              </div>
-                            </div>
-                            <div className="form-row mb-2">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Total shipping charge (cargo company)
-                                </label>
-
-                                <input
-                                  type="text"
-                                  name="shippingChargeCargo"
-                                  className="form-control"
-                                  placeholder="Total shipping charge (cargo company)"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.shippingChargeCargo}
                                 />
                               </div>
                             </div>

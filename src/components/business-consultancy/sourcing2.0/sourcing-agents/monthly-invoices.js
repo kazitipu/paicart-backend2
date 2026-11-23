@@ -219,7 +219,7 @@ export class MonthlyInvoices extends Component {
                 <div
                   className="card-body"
                   style={{
-                    backgroundColor: "#00254c",
+                    backgroundColor: "#ff6a00",
                     cursor: "pointer",
                   }}
                   onClick={() => {
@@ -424,7 +424,7 @@ export class MonthlyInvoices extends Component {
                               style={{
                                 padding: "30px 15px",
                                 color: "white",
-                                backgroundColor: "#00254c",
+                                backgroundColor: "#ff6a00",
                               }}
                             >
                               #
@@ -434,7 +434,7 @@ export class MonthlyInvoices extends Component {
                               style={{
                                 padding: "30px 15px",
                                 color: "white",
-                                backgroundColor: "#00254c",
+                                backgroundColor: "#ff6a00",
                               }}
                             >
                               Date
@@ -444,7 +444,7 @@ export class MonthlyInvoices extends Component {
                               style={{
                                 padding: "30px 15px",
                                 color: "white",
-                                backgroundColor: "#00254c",
+                                backgroundColor: "#ff6a00",
                               }}
                             >
                               Product Image
@@ -454,7 +454,7 @@ export class MonthlyInvoices extends Component {
                               style={{
                                 padding: "30px 15px",
                                 color: "white",
-                                backgroundColor: "#00254c",
+                                backgroundColor: "#ff6a00",
                               }}
                             >
                               Tracking No
@@ -464,7 +464,7 @@ export class MonthlyInvoices extends Component {
                               style={{
                                 padding: "30px 15px",
                                 color: "white",
-                                backgroundColor: "#00254c",
+                                backgroundColor: "#ff6a00",
                               }}
                             >
                               Order Id
@@ -475,7 +475,7 @@ export class MonthlyInvoices extends Component {
                               style={{
                                 padding: "30px 15px",
                                 color: "white",
-                                backgroundColor: "#00254c",
+                                backgroundColor: "#ff6a00",
                               }}
                             >
                               Product Type
@@ -485,7 +485,7 @@ export class MonthlyInvoices extends Component {
                               style={{
                                 padding: "30px 15px",
                                 color: "white",
-                                backgroundColor: "#00254c",
+                                backgroundColor: "#ff6a00",
                               }}
                             >
                               China Weight
@@ -495,7 +495,7 @@ export class MonthlyInvoices extends Component {
                               style={{
                                 padding: "30px 15px",
                                 color: "white",
-                                backgroundColor: "#00254c",
+                                backgroundColor: "#ff6a00",
                               }}
                             >
                               Received Weight
@@ -505,7 +505,7 @@ export class MonthlyInvoices extends Component {
                               style={{
                                 padding: "30px 15px",
                                 color: "white",
-                                backgroundColor: "#00254c",
+                                backgroundColor: "#ff6a00",
                               }}
                             >
                               Shipping Rate
@@ -515,7 +515,7 @@ export class MonthlyInvoices extends Component {
                               style={{
                                 padding: "30px 15px",
                                 color: "white",
-                                backgroundColor: "#00254c",
+                                backgroundColor: "#ff6a00",
                               }}
                             >
                               Total Shipping Charge
@@ -525,7 +525,7 @@ export class MonthlyInvoices extends Component {
                               style={{
                                 padding: "30px 15px",
                                 color: "white",
-                                backgroundColor: "#00254c",
+                                backgroundColor: "#ff6a00",
                               }}
                             >
                               Purchasing Rmb
@@ -535,7 +535,7 @@ export class MonthlyInvoices extends Component {
                               style={{
                                 padding: "30px 15px",
                                 color: "white",
-                                backgroundColor: "#00254c",
+                                backgroundColor: "#ff6a00",
                               }}
                             >
                               Total Bill{" "}
@@ -549,7 +549,7 @@ export class MonthlyInvoices extends Component {
                               style={{
                                 padding: "30px 15px",
                                 color: "white",
-                                backgroundColor: "#00254c",
+                                backgroundColor: "#ff6a00",
                               }}
                             >
                               Order Status
@@ -559,7 +559,7 @@ export class MonthlyInvoices extends Component {
                               style={{
                                 padding: "30px 15px",
                                 color: "white",
-                                backgroundColor: "#00254c",
+                                backgroundColor: "#ff6a00",
                               }}
                             >
                               Payment Status
@@ -570,7 +570,7 @@ export class MonthlyInvoices extends Component {
                               style={{
                                 padding: "30px 15px",
                                 color: "white",
-                                backgroundColor: "#00254c",
+                                backgroundColor: "#ff6a00",
                               }}
                             >
                               Customer
@@ -580,7 +580,7 @@ export class MonthlyInvoices extends Component {
                               style={{
                                 padding: "30px 15px",
                                 color: "white",
-                                backgroundColor: "#00254c",
+                                backgroundColor: "#ff6a00",
                               }}
                             >
                               Warehouse Image
@@ -767,7 +767,7 @@ export class MonthlyInvoices extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}
@@ -966,7 +966,7 @@ export class MonthlyInvoices extends Component {
                       </label>
                       <table className="table table-bordered table-striped table-hover">
                         <thead>
-                          <tr style={{ background: "rgb(0, 37, 76)" }}>
+                          <tr style={{ background: "#ff6a00" }}>
                             <th style={{ color: "white" }}>Date</th>
                             <th style={{ color: "white" }}>Amount</th>
                             <th style={{ color: "white" }}>Entry By</th>

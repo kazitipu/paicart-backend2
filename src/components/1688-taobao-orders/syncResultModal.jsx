@@ -69,7 +69,7 @@ const SyncResultModal = ({ result, onClose }) => {
       >
         <div
           style={{
-            background: "rgb(0, 37, 76)",
+            background: "#ff6a00",
             color: "white",
             padding: "16px 20px",
           }}
@@ -134,7 +134,7 @@ const SyncResultModal = ({ result, onClose }) => {
             onClick={onClose}
             className="btn"
             style={{
-              background: "rgb(0, 37, 76)",
+              background: "#ff6a00",
               color: "white",
               borderRadius: 8,
               padding: "6px 22px",

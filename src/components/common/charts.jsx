@@ -310,7 +310,7 @@ export class ComboBars extends React.Component {
               top: 0,
               left: `${((hover + 0.5) / buckets.length) * 100}%`,
               transform: "translateX(-50%)",
-              background: "rgb(0, 37, 76)",
+              background: "#ff6a00",
               color: "#fff",
               borderRadius: 9,
               padding: "7px 11px",

@@ -83,7 +83,7 @@ export class SiteDiscount extends Component {
     renderableDiscounts = renderableDiscounts.sort((a, b) => b.id - a.id);
     return (
       <Fragment>
-        <Breadcrumb title={"Site Discount"} parent="1688-orders" />
+        <Breadcrumb title={"Site Discount"} parent="Website Orders" />
         <div className="container-fluid">
           <div className="row" style={{ justifyContent: "center" }}>
             <div className="col-sm-12">
@@ -107,7 +107,7 @@ export class SiteDiscount extends Component {
                         style={{
                           fontSize: "130%",
                           marginRight: "5px",
-                          color: "#00254c",
+                          color: "#e05900",
                         }}
                       ></i>
                       Site Discount (configuration) <br />
@@ -126,7 +126,7 @@ export class SiteDiscount extends Component {
                           data-toggle="modal"
                           data-target="#siteDiscountModal"
                           style={{
-                            backgroundColor: "rgb(0, 37, 76)",
+                            backgroundColor: "#ff6a00",
                             border: "none",
                             color: "white",
                             fontSize: 11,
@@ -160,7 +160,7 @@ export class SiteDiscount extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                               maxWidth: "150px",
                               minWidth: "150px",
                             }}
@@ -172,7 +172,7 @@ export class SiteDiscount extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                               maxWidth: "150px",
                               minWidth: "150px",
                             }}
@@ -184,7 +184,7 @@ export class SiteDiscount extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Expiration Date
@@ -194,7 +194,7 @@ export class SiteDiscount extends Component {
                             style={{
                               padding: "30px 15px",
                               color: "white",
-                              backgroundColor: "#00254c",
+                              backgroundColor: "#ff6a00",
                             }}
                           >
                             Action
@@ -284,7 +284,7 @@ export class SiteDiscount extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}
@@ -436,7 +436,7 @@ export class SiteDiscount extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}

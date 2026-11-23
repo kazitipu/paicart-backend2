@@ -103,7 +103,7 @@ const BUTTON_BASE = {
 export const Button = ({ variant = "primary", style, children, ...rest }) => {
   const variants = {
     primary: { background: "#FF6A00", color: "#fff" },
-    dark: { background: "rgb(0, 37, 76)", color: "#fff" },
+    dark: { background: "#ff6a00", color: "#fff" },
     subtle: {
       background: "#f1f5f9",
       color: "#0f172a",
@@ -209,7 +209,7 @@ export const ModalHeader = ({ title, subtitle, badges, closeId }) => (
   <div
     className="modal-header"
     style={{
-      background: "rgb(0, 37, 76)",
+      background: "#ff6a00",
       color: "#fff",
       alignItems: "flex-start",
       padding: "16px 20px",

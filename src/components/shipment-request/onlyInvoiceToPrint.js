@@ -178,7 +178,7 @@ export class OnlyInvoieToPrint extends Component {
                     req.receivedWeight
                       ? `${req.receivedWeight} kg`
                       : req.weight
-                        ? `${req.weight} kg (booked)`
+                        ? `${req.weight} kg (est.)`
                         : "Pending"
                   }
                 />

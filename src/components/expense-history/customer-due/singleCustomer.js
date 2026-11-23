@@ -102,7 +102,7 @@ export class SingleCustomer extends Component {
                                 style={{
                                   padding: "30px 15px",
                                   color: "white",
-                                  backgroundColor: "#00254c",
+                                  backgroundColor: "#ff6a00",
                                 }}
                               >
                                 Date
@@ -112,7 +112,7 @@ export class SingleCustomer extends Component {
                                 style={{
                                   padding: "30px 15px",
                                   color: "white",
-                                  backgroundColor: "#00254c",
+                                  backgroundColor: "#ff6a00",
                                 }}
                               >
                                 Note
@@ -122,7 +122,7 @@ export class SingleCustomer extends Component {
                                 style={{
                                   padding: "30px 15px",
                                   color: "white",
-                                  backgroundColor: "#00254c",
+                                  backgroundColor: "#ff6a00",
                                 }}
                               >
                                 Cash Out
@@ -157,7 +157,7 @@ export class SingleCustomer extends Component {
                                 style={{
                                   padding: "30px 15px",
                                   color: "white",
-                                  backgroundColor: "#00254c",
+                                  backgroundColor: "#ff6a00",
                                 }}
                               >
                                 Date
@@ -167,7 +167,7 @@ export class SingleCustomer extends Component {
                                 style={{
                                   padding: "30px 15px",
                                   color: "white",
-                                  backgroundColor: "#00254c",
+                                  backgroundColor: "#ff6a00",
                                 }}
                               >
                                 Note
@@ -177,7 +177,7 @@ export class SingleCustomer extends Component {
                                 style={{
                                   padding: "30px 15px",
                                   color: "white",
-                                  backgroundColor: "#00254c",
+                                  backgroundColor: "#ff6a00",
                                 }}
                               >
                                 Cash In

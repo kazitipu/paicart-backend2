@@ -404,7 +404,7 @@ export class PartialPayment extends Component {
     console.log(renderablePartials);
     return (
       <Fragment>
-        <Breadcrumb title={"1688 Payment Link"} parent="1688-orders" />
+        <Breadcrumb title={"1688 Payment Link"} parent="Website Orders" />
         {/* <!-- Container-fluid starts--> */}
         <div className="container-fluid">
           <div className="row" style={{ justifyContent: "center" }}>
@@ -861,7 +861,7 @@ export class PartialPayment extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}
@@ -986,7 +986,7 @@ export class PartialPayment extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}
@@ -1210,7 +1210,7 @@ export class PartialPayment extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}
@@ -1412,7 +1412,7 @@ export class PartialPayment extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}
@@ -1811,7 +1811,7 @@ export class PartialPayment extends Component {
               <div
                 className="modal-header"
                 style={{
-                  backgroundColor: "rgb(0, 37, 76)",
+                  backgroundColor: "#ff6a00",
                   paddingTop: 20,
                   paddingBottom: 20,
                 }}

@@ -1,6 +1,9 @@
 import firebase from "firebase/app";
 import { dhakaDayStart, dhakaDayEnd } from "../constants/dateRange";
 import { parseRmb as parseRmbValue } from "../constants/productRequestPayment";
+import { splitReceivedPayment } from "../constants/bulkActions";
+import { getOrderDue, getShipmentPayable } from "../constants/paymentMath";
+import { payableItemsOf } from "../constants/paymentSearch";
 import "firebase/auth";
 import "firebase/firestore";
 import "firebase/storage";
@@ -2683,6 +2686,127 @@ export const getAllRequestsForSearch = async (collectionName) => {
   }
 };
 
+/* Client Due page: every record that can carry a due. All three collections
+   are read whole — delivered records count too, and a status != query would
+   also drop older docs that lack the field. */
+export const getClientDueSources = async () => {
+  const readAll = async (ref) => {
+    const snapshot = await ref.get();
+    const docs = [];
+    snapshot.forEach((doc) => docs.push(doc.data()));
+    return docs;
+  };
+  const [orders, requests, shipments] = await Promise.all([
+    readAll(firestore.collection("ordersApi")),
+    readAll(firestore.collection("bookingRequest")),
+    readAll(firestore.collection("shipForMe")),
+  ]);
+  return { orders, requests, shipments };
+};
+
+/* One customer's full history for the Client Due detail view: every order,
+   product request and Ship For Me booking (delivered ones included — their
+   payments belong in the transaction history) plus every payment slip they
+   uploaded, any status. 1688-order and product-request slips live in
+   paymentRequestApi, Ship For Me slips in paymentRequest. */
+export const getClientLedger = async (userId) => {
+  const read = async (collectionName, tag) => {
+    const snapshot = await firestore
+      .collection(collectionName)
+      .where("userId", "==", userId)
+      .get();
+    const docs = [];
+    snapshot.forEach((doc) =>
+      docs.push(tag ? { ...doc.data(), _id: doc.id, _collection: collectionName } : doc.data()),
+    );
+    return docs;
+  };
+  const [orders, requests, shipments, apiSlips, shipSlips] = await Promise.all([
+    read("ordersApi"),
+    read("bookingRequest"),
+    read("shipForMe"),
+    read("paymentRequestApi", true),
+    read("paymentRequest", true),
+  ]);
+  return { orders, requests, shipments, paymentRequests: [...apiSlips, ...shipSlips] };
+};
+
+/* Delivery requests made by customers from To Receive (customer website and
+   app): `deliveryRequest` on each ordersApi / bookingRequest / shipForMe
+   record — { method, label, status, requestedAt, requestedDate, fullyPaid,
+   dueAtRequest, note, requestedBy }. Rules: paicart-nextjs15
+   src/lib/deliveryRequest.js. */
+const DELIVERY_COLLECTIONS = { order: "ordersApi", request: "bookingRequest", ship: "shipForMe" };
+
+export const getDeliveryRequests = async () => {
+  const read = async (kind) => {
+    const snapshot = await firestore
+      .collection(DELIVERY_COLLECTIONS[kind])
+      .where("deliveryRequest.requestedAt", ">", 0)
+      .get();
+    const docs = [];
+    snapshot.forEach((doc) => docs.push({ kind, record: doc.data() }));
+    return docs;
+  };
+  const lists = await Promise.all(Object.keys(DELIVERY_COLLECTIONS).map(read));
+  return [].concat(...lists);
+};
+
+/* Moves a request along: requested → arranged → delivered, or cancelled.
+   Only touches the deliveryRequest's own status fields — the record's
+   shipment status is changed the usual way. */
+export const updateDeliveryRequestStatus = async (kind, id, status, handledBy) => {
+  const now = new Date();
+  await firestore.doc(`${DELIVERY_COLLECTIONS[kind]}/${id}`).update({
+    "deliveryRequest.status": status,
+    "deliveryRequest.handledBy": handledBy || "Paicart",
+    "deliveryRequest.handledAt": now.getTime(),
+    "deliveryRequest.handledDate": now.toLocaleDateString("en-GB"),
+  });
+};
+
+/* Staff enter or change a record's delivery request (source "admin") */
+export const saveDeliveryRequest = async (kind, id, deliveryRequest) => {
+  await firestore.doc(`${DELIVERY_COLLECTIONS[kind]}/${id}`).update({ deliveryRequest });
+  return deliveryRequest;
+};
+
+/* In-app notifications. One document per recipient in `notifications`, so
+   each customer's app reads only `where userId == uid` and keeps its own
+   read state. The customer website and mobile app both read this contract:
+     userId, title, body, type, time (ms), createdAt, read, readAt,
+     sentBy, batchId, audience ("single" | "selected" | "all")
+   Returns how many customers it was sent to. */
+export const sendInAppNotifications = async (userIds, { title, body, audience, sentBy }) => {
+  const recipients = Array.from(new Set((userIds || []).filter(Boolean).map(String)));
+  if (!recipients.length) return 0;
+  const time = Date.now();
+  const batchId = `NTF-${time}`;
+  const CHUNK = 400; /* Firestore caps a batch at 500 writes */
+  for (let i = 0; i < recipients.length; i += CHUNK) {
+    const batch = firestore.batch();
+    recipients.slice(i, i + CHUNK).forEach((userId) => {
+      const ref = firestore.collection("notifications").doc();
+      batch.set(ref, {
+        id: ref.id,
+        userId,
+        title: String(title || "").trim(),
+        body: String(body || "").trim(),
+        type: "admin",
+        time,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        read: false,
+        readAt: null,
+        sentBy: sentBy || "Paicart",
+        batchId,
+        audience: audience || (recipients.length === 1 ? "single" : "selected"),
+      });
+    });
+    await batch.commit();
+  }
+  return recipients.length;
+};
+
 export const getAllShipmentRequests = async (status) => {
   const reqeustsCollectionRef = firestore
     .collection("shipForMe")
@@ -3142,93 +3266,96 @@ export const updatePaymentRequestStatus = async (paymentRequestObj) => {
   const snapshot = await paymentRequestRef.get();
   if (snapshot.exists) {
     try {
-      paymentRequestObj.productRequestArray.forEach(
-        async (productRequest, index) => {
-          if (productRequest.shipFrom) {
-            // Each ship-for-me booking is always paid in full (no partial
-            // payments for this flow) — use THIS booking's own shipping
-            // charge as its payment amount, not paymentRequestObj.amount
-            // (the combined total across every booking in this payment
-            // request), otherwise combining N bookings would record the
-            // full combined total N times over in both this booking's
-            // payment history and the daily cash-in ledger.
-            const itemAmount =
-              parseInt(productRequest.shippingChargeCustomer) || 0;
-            const bookingRequestRef = firestore.doc(
-              `shipForMe/${productRequest.bookingId}`,
-            );
-            const bookingRequest = await bookingRequestRef.get();
-            await bookingRequestRef.update({
-              paymentRequested: false,
-              paymentStatus:
-                paymentRequestObj.status != "rejected"
-                  ? "Paid"
-                  : bookingRequest.data().paymentStatus
-                    ? bookingRequest.data().paymentStatus
-                    : "Not Paid",
-              payments:
-                paymentRequestObj.status == "rejected"
-                  ? bookingRequest.data().payments &&
-                    bookingRequest.data().payments.length > 0
-                    ? bookingRequest.data().payments
-                    : []
-                  : bookingRequest.data().payments &&
-                      bookingRequest.data().payments.length > 0
-                    ? [
-                        ...bookingRequest.data().payments,
-                        {
-                          amount: itemAmount,
-                          date: new Date().toLocaleDateString("en-GB"),
-                          method: paymentRequestObj.method,
-                          paidBy: paymentRequestObj.displayName || "user",
-                          approvedBy: "admin",
-                        },
-                      ]
-                    : [
-                        {
-                          amount: itemAmount,
-                          date: new Date().toLocaleDateString("en-GB"),
-                          method: paymentRequestObj.method,
-                          paidBy: paymentRequestObj.displayName || "user",
-                          approvedBy: "admin",
-                        },
-                      ],
-            });
-            let cashInObj = {
-              id: `${date.getTime().toString()}${index}`,
-              category: "Ship For Me",
-              subCategory: paymentRequestObj.method,
-              month: getMonthName(),
-              date: date.toLocaleDateString("en-GB"),
-              note: `Order Id: ${productRequest.bookingId}   User: ${
-                paymentRequestObj.displayName || "Guest"
-              }`,
-              amount: itemAmount,
-              receiveBy: "admin",
-              status: "pending",
-              unEditable: true,
-            };
-            const cashInRef = firestore.doc(`dailyCashIn/${cashInObj.id}`);
-            cashInRef.set(cashInObj);
+      const items = paymentRequestObj.productRequestArray || [];
+      const approved = paymentRequestObj.status != "rejected";
 
-            if (paymentRequestObj.status != "rejected") {
-              addUserPoints(bookingRequest.data().userId, itemAmount);
-            }
-          } else {
-            const bookingRequestRef = firestore.doc(
-              `bookingRequest/${productRequest.bookingId}`,
-            );
-            const bookingRequest = await bookingRequestRef.get();
-            await bookingRequestRef.update({
-              paymentStatus: paymentRequestObj.status,
-              status:
-                paymentRequestObj.status === "paid"
-                  ? "Paid"
-                  : bookingRequest.data().status,
-            });
-          }
-        },
+      /* Ship-for-me bookings paid together: split the amount the customer
+         actually paid so every booking gets the same percentage of its own
+         due. It used to record each booking's full charge whatever was paid,
+         so a 60% payment showed every booking as fully Paid. Reads first, so
+         the shares are worked out from the dues before anything is written. */
+      const shipForMeItems = items.filter((item) => item.shipFrom);
+      const shipForMeSnaps = await Promise.all(
+        shipForMeItems.map((item) =>
+          firestore.doc(`shipForMe/${item.bookingId}`).get(),
+        ),
       );
+      const dueOf = (data) => getOrderDue(data, getShipmentPayable);
+      const paidAmount =
+        parseInt(paymentRequestObj.amount) ||
+        shipForMeSnaps.reduce(
+          (sum, snap) => sum + (snap.exists ? dueOf(snap.data()) : 0),
+          0,
+        );
+      const shares = splitReceivedPayment(
+        shipForMeSnaps.map((snap) => (snap.exists ? dueOf(snap.data()) : 0)),
+        paidAmount,
+      );
+
+      for (let index = 0; index < shipForMeItems.length; index++) {
+        const productRequest = shipForMeItems[index];
+        const snap = shipForMeSnaps[index];
+        if (!snap.exists) continue;
+        const booking = snap.data();
+        const bookingRequestRef = snap.ref;
+        const itemAmount = shares[index] || 0;
+
+        if (!approved) {
+          await bookingRequestRef.update({
+            paymentRequested: false,
+            paymentStatus: booking.paymentStatus || "Not Paid",
+          });
+          continue;
+        }
+
+        const payments = [
+          ...(booking.payments || []),
+          {
+            amount: itemAmount,
+            date: new Date().toLocaleDateString("en-GB"),
+            method: paymentRequestObj.method,
+            paidBy: paymentRequestObj.displayName || "user",
+            approvedBy: "admin",
+          },
+        ];
+        await bookingRequestRef.update({
+          paymentRequested: false,
+          paymentStatus:
+            dueOf({ ...booking, payments }) <= 0 ? "Paid" : "Partially Paid",
+          payments,
+        });
+        const cashInObj = {
+          id: `${date.getTime().toString()}${index}`,
+          category: "Ship For Me",
+          subCategory: paymentRequestObj.method,
+          month: getMonthName(),
+          date: date.toLocaleDateString("en-GB"),
+          note: `Order Id: ${productRequest.bookingId}   User: ${
+            paymentRequestObj.displayName || "Guest"
+          }`,
+          amount: itemAmount,
+          receiveBy: "admin",
+          status: "pending",
+          unEditable: true,
+        };
+        await firestore.doc(`dailyCashIn/${cashInObj.id}`).set(cashInObj);
+        addUserPoints(booking.userId, itemAmount);
+      }
+
+      /* Legacy product-request entries in this collection: status only. */
+      for (const productRequest of items.filter((item) => !item.shipFrom)) {
+        const bookingRequestRef = firestore.doc(
+          `bookingRequest/${productRequest.bookingId}`,
+        );
+        const bookingRequest = await bookingRequestRef.get();
+        await bookingRequestRef.update({
+          paymentStatus: paymentRequestObj.status,
+          status:
+            paymentRequestObj.status === "paid"
+              ? "Paid"
+              : bookingRequest.data().status,
+        });
+      }
       await paymentRequestRef.update({
         status: paymentRequestObj.status,
       });
@@ -3265,7 +3392,7 @@ const getTotalDue = (order) => {
         (order.discount ? parseInt(order.discount) : 0);
   } else {
     totalBill = order.orderTotal
-      ? order.orderTotal +
+      ? parseInt(order.orderTotal) +
         (order.localShipping ? parseInt(order.localShipping) : 0) +
         (order.otherCost ? parseInt(order.otherCost) : 0) -
         (order.discount ? parseInt(order.discount) : 0)
@@ -3286,7 +3413,13 @@ const getSingleShopTotal = (shop) => {
   });
   return total;
 };
-export const updatePaymentRequestOrderStatus = async (paymentRequestObj) => {
+export const updatePaymentRequestOrderStatus = async (requestObj) => {
+  /* Product-request payments from the customer site carry their bookings in
+     productRequestArray; everything below walks pendingOrders. */
+  const paymentRequestObj = {
+    ...requestObj,
+    pendingOrders: payableItemsOf(requestObj),
+  };
   let date = new Date();
   console.log(paymentRequestObj);
   const paymentRequestRef = firestore.doc(
@@ -3301,6 +3434,29 @@ export const updatePaymentRequestOrderStatus = async (paymentRequestObj) => {
         let balance2 = parseInt(
           paymentRequestObj.payableTotalWithGatewayCharge,
         );
+        /* Several orders paid together: every order gets the same percentage
+           of its own due (৳3,000 against ৳5,000 due pays 60% of each),
+           instead of filling the first orders completely and leaving the rest
+           unpaid - that made it impossible to see which orders a payment was
+           actually for. */
+        let multiShares = [];
+        if (paymentRequestObj.pendingOrders.length > 1) {
+          const isProductRequest = !!paymentRequestObj.productRequest;
+          const snaps = await Promise.all(
+            paymentRequestObj.pendingOrders.map((element) =>
+              (isProductRequest
+                ? firestore.doc(`bookingRequest/${element.bookingId}`)
+                : firestore.doc(`ordersApi/${element.orderId}`)
+              ).get(),
+            ),
+          );
+          multiShares = splitReceivedPayment(
+            snaps.map((snap) =>
+              snap.exists ? Math.max(0, getTotalDue(snap.data())) : 0,
+            ),
+            balance,
+          );
+        }
         for (let i = 0; i < paymentRequestObj.pendingOrders.length; i++) {
           // ekta shop er jonno payment
           if (paymentRequestObj.pendingOrders.length == 1) {
@@ -3439,16 +3595,9 @@ export const updatePaymentRequestOrderStatus = async (paymentRequestObj) => {
               ? firestore.doc(`bookingRequest/${element.bookingId}`)
               : firestore.doc(`ordersApi/${element.orderId}`);
 
-            if (balance > 0) {
+            const amountForThisOrder = multiShares[i] || 0;
+            if (amountForThisOrder > 0) {
               const order = await orderRef.get();
-              // Use the item's actual remaining due (goods + shipping + local
-              // courier + other cost - discount - amount already paid), not the
-              // raw orderTotal field — orderTotal ignores shipping/other costs
-              // and any prior payments, which previously caused the shared
-              // balance to be split incorrectly across combined items.
-              let orderDueBefore = Math.max(0, getTotalDue(order.data()));
-              let amountForThisOrder =
-                balance > orderDueBefore ? orderDueBefore : balance;
               let paymentsArray = [];
 
               if (order.data().payments && order.data().payments.length > 0) {
@@ -3502,14 +3651,11 @@ export const updatePaymentRequestOrderStatus = async (paymentRequestObj) => {
               cashInRef.set(cashInObj);
               addUserPoints(order.data().userId, amountForThisOrder);
 
-              // balance theke ei order er jonno babohar kora amount bad jabe
-              balance -= amountForThisOrder;
             } else {
-              // balance already used up before reaching this item — nothing
-              // was actually paid toward it, so release it back to "needs
-              // payment": orders go back to purchaseLater, product requests
-              // back to an empty paymentStatus (mirrors each item's own
-              // single-item reject-branch behavior above).
+              // Nothing of this payment went to this item (it had nothing
+              // due), so release it back to "needs payment": orders go back
+              // to purchaseLater, product requests back to an empty
+              // paymentStatus (mirrors the single-item reject branch above).
               const order = await orderRef.get();
               await orderRef.update({
                 paymentStatus: isProductRequest ? "" : "purchaseLater",
@@ -4268,27 +4414,19 @@ export const updateOrdersFrom1688 = async (updates) => {
   }
 };
 
+/* Saves fetched 1688 tracking numbers. Throws on failure so the caller can
+   tell the admin — it used to swallow the error and look like a success. */
 export const updateOrdersWithTrackingNo = async (orders) => {
-  try {
-    console.log("firebase function is getting called!");
-    const batch = firebase.firestore().batch();
-
-    // Example: update orders in the batch
-    orders.forEach((order) => {
-      const orderRef = firebase
-        .firestore()
-        .collection("ordersApi")
-        .doc(`${order.orderId}`);
-      batch.update(orderRef, {
+  for (let i = 0; i < orders.length; i += 400) {
+    const batch = firestore.batch();
+    orders.slice(i, i + 400).forEach((order) => {
+      batch.update(firestore.collection("ordersApi").doc(`${order.orderId}`), {
         trackingNo: order.trackingNo,
       });
     });
     await batch.commit();
-    return orders;
-  } catch (err) {
-    console.log(err);
-    return [];
   }
+  return orders;
 };
 export const deleteOrderApi = async (order) => {
   const orderRef = firestore.doc(`ordersApi/${order.orderId}`);
@@ -5971,4 +6109,36 @@ export const clear1688CategoryRates = async (categoryId, freightType) => {
     source: source ? "inherited" : "none",
     keys,
   };
+};
+
+/* Parcel details page (ParcelDetailsPage.jsx): one record of a Ship For Me
+   booking, a 1688 order or a product request. Returns null instead of
+   alerting so the page can show its own "not found" state. */
+export const PARCEL_COLLECTIONS = {
+  ship: "shipForMe",
+  order: "ordersApi",
+  request: "bookingRequest",
+};
+
+export const getParcelRecord = async (kind, id) => {
+  const collection = PARCEL_COLLECTIONS[kind];
+  if (!collection || !id) return null;
+  try {
+    const snap = await firestore.doc(`${collection}/${id}`).get();
+    return snap.exists ? snap.data() : null;
+  } catch (error) {
+    console.log("getParcelRecord", error);
+    return null;
+  }
+};
+
+/* Partial update — only the given fields (cartons, trackingNumbers, …) are
+   written, so nothing else on the record is overwritten. */
+export const updateParcelRecordFields = async (kind, id, patch) => {
+  const collection = PARCEL_COLLECTIONS[kind];
+  if (!collection || !id) throw new Error("Unknown record");
+  const ref = firestore.doc(`${collection}/${id}`);
+  await ref.update(patch);
+  const snap = await ref.get();
+  return snap.data();
 };

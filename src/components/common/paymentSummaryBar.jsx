@@ -161,7 +161,7 @@ const PaymentSummaryBar = ({
               fontSize: 12,
               fontWeight: 700,
               color: "#fff",
-              background: "rgb(0, 37, 76)",
+              background: "#ff6a00",
               borderRadius: 999,
               padding: "3px 12px",
             }}
