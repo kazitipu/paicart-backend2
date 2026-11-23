@@ -6,6 +6,7 @@ import Breadcrumb from "../common/breadcrumb";
 import { Badge, Button, SegmentTabs, StatTile, StatRow, TONES } from "../common/listUi";
 import { showDialog } from "../common/appDialog.jsx";
 import { SourceLine } from "../common/deliveryRequestCell.jsx";
+import { AddressCard, ChipList } from "../common/addressAndChips.jsx";
 import {
   getCustomersForSearch,
   getDeliveryRequests,
@@ -16,10 +17,11 @@ import { KIND_LABEL, orderBill, requestBill, shipmentBill } from "../../constant
 import {
   DELIVERY_METHODS,
   DELIVERY_STATUSES,
+  ADDRESS_SOURCE_LABEL,
   deliveryAddressOf,
+  deliveryAddressSource,
   deliveryDue,
   deliveryMethod,
-  formatAddress,
   isBilled,
   recordIdOf,
   stageOf,
@@ -87,6 +89,25 @@ const th = { padding: "10px 12px", fontSize: 11, fontWeight: 700, letterSpacing:
 const td = { padding: "11px 12px", fontSize: 13, color: C.text, borderBottom: `1px solid ${C.line}`, verticalAlign: "top" };
 const control = { height: 36, borderRadius: 9, border: "1px solid #e2e8f0", padding: "0 10px", fontSize: 13, color: C.ink, background: "#fff" };
 
+/* Says whether the address is fixed (saved with the request) or the
+   customer's current default, which follows their profile */
+const AddressSourceTag = ({ source }) => (
+  <div
+    style={{
+      display: "inline-block",
+      marginTop: 5,
+      fontSize: 10.5,
+      fontWeight: 700,
+      borderRadius: 6,
+      padding: "1px 7px",
+      color: source === "default" ? TONES.orange.fg : TONES.green.fg,
+      background: source === "default" ? TONES.orange.bg : TONES.green.bg,
+    }}
+  >
+    {ADDRESS_SOURCE_LABEL[source] || ""}
+  </div>
+);
+
 /* ── Review drawer ────────────────────────────────────────────────── */
 
 const ReviewDrawer = ({ group, user, onClose, actions }) => {
@@ -142,8 +163,16 @@ const ReviewDrawer = ({ group, user, onClose, actions }) => {
 
           <div style={{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 14, padding: 14, marginBottom: 14 }}>
             <div style={{ fontSize: 12, fontWeight: 800, color: C.muted, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>Deliver to</div>
-            <div style={{ fontSize: 14, color: group.address ? C.ink : "#94a3b8" }}>{group.address ? formatAddress(group.address) : "No address — customer has no default shipping address"}</div>
-            {group.note && <div style={{ fontSize: 13, color: C.text, marginTop: 8, whiteSpace: "pre-line" }}>Note: “{group.note}”</div>}
+            {group.method === "office_pickup" && (
+              <div style={{ fontSize: 12, fontWeight: 700, color: TONES.blue.fg, marginBottom: 8 }}>Office pickup — the customer collects from the Paicart warehouse</div>
+            )}
+            <AddressCard address={group.address} empty="No address — the customer has no default shipping address" />
+            {group.address && <AddressSourceTag source={group.addressSource} />}
+            {group.note && (
+              <div style={{ fontSize: 13, color: C.text, marginTop: 10, padding: "8px 10px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, whiteSpace: "pre-line" }}>
+                <b>Customer note:</b> {group.note}
+              </div>
+            )}
           </div>
 
           {group.items.map((it) => {
@@ -183,8 +212,16 @@ const ReviewDrawer = ({ group, user, onClose, actions }) => {
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 16px", fontSize: 12, color: C.muted, marginTop: 8 }}>
                   <span>Weight: <b style={{ color: C.text }}>{parseFloat(r.receivedWeight) > 0 ? `${r.receivedWeight} kg` : "—"}</b></span>
                   <span>Cartons: <b style={{ color: C.text }}>{r.ctnQuantity || list(r.ctnNo).length || "—"}</b></span>
-                  {marks.length > 0 && <span>Shipping mark: <b style={{ color: C.text }}>{marks.join(", ")}</b></span>}
-                  {tracking.length > 0 && <span>Tracking: <b style={{ color: C.text }}>{tracking.join(", ")}</b></span>}
+                  {marks.length > 0 && (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      Shipping mark{marks.length > 1 ? ` (${marks.length})` : ""}: <ChipList items={marks} max={4} tone="orange" />
+                    </span>
+                  )}
+                  {tracking.length > 0 && (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      Tracking{tracking.length > 1 ? ` (${tracking.length})` : ""}: <ChipList items={tracking} max={4} />
+                    </span>
+                  )}
                   {r.pathaoBooking && r.pathaoBooking.consignmentId && <span>Pathao: <b style={{ color: TONES.orange.fg }}>{r.pathaoBooking.consignmentId}</b></span>}
                 </div>
               </div>
@@ -257,6 +294,7 @@ const DeliveryRequests = () => {
           note: dr.note || "",
           requestedAt: Number(dr.requestedAt) || 0,
           address: deliveryAddressOf(record, users[record.userId]),
+          addressSource: deliveryAddressSource(record),
           items: [],
         };
       }
@@ -409,7 +447,8 @@ const DeliveryRequests = () => {
             </div>
 
             <div style={{ overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 12 }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              {/* auto layout: a global stylesheet forces fixed, equal columns */}
+              <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "auto" }}>
                 <thead>
                   <tr>
                     <th style={th}>Requested</th>
@@ -471,9 +510,13 @@ const DeliveryRequests = () => {
                               </div>
                             )}
                           </td>
-                          <td style={{ ...td, maxWidth: 280 }}>
-                            <div style={{ fontSize: 12, color: g.address ? C.text : "#cbd5e1" }}>{g.address ? formatAddress(g.address) : "No address on record"}</div>
-                            {g.note && <div style={{ fontSize: 12, color: C.ink, marginTop: 4, whiteSpace: "pre-line" }}>“{g.note}”</div>}
+                          <td style={td}>
+                            {/* table cells ignore min-width — the wrapper holds it */}
+                            <div style={{ minWidth: 260, maxWidth: 340 }}>
+                              <AddressCard address={g.address} compact />
+                              {g.address && <AddressSourceTag source={g.addressSource} />}
+                              {g.note && <div style={{ fontSize: 12, color: "#92400e", marginTop: 6, whiteSpace: "pre-line" }}>“{g.note}”</div>}
+                            </div>
                           </td>
                           <td style={td}>
                             <Badge tone={st.tone}>{st.label}</Badge>

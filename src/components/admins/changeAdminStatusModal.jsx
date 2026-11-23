@@ -102,6 +102,7 @@ class ChangeAdminStatusModal extends Component {
                                 <option value="Accounts">Accounts</option>
                                 <option value="Employee">Employee</option>
                                 <option value="Officer">Officer</option>
+                                <option value="Delivery">Delivery</option>
                                 <option value="Partner">Partner</option>
                               </select>
                             </div>

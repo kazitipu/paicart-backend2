@@ -195,6 +195,13 @@ export class Datatable extends Component {
                   </div>
                 );
               }
+              if (adminObj.status === "Delivery") {
+                return (
+                  <div style={{ color: "#f97316" }}>
+                    <i className="icofont-disc"></i>&nbsp;{adminObj.status}
+                  </div>
+                );
+              }
               if (adminObj.status === "Officer") {
                 return (
                   <div style={{ color: "green" }}>

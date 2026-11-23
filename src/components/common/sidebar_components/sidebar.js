@@ -6,6 +6,7 @@ import {
   MENUITEMSFORACCOUNTS,
   MENUITEMSFOREMPLOYEE,
   MENUITEMSFOROFFICER,
+  MENUITEMSFORDELIVERY,
   MENUITEMSFORPARTNER,
 } from "../../../constants/menu";
 import { connect } from "react-redux";
@@ -103,6 +104,9 @@ export class sidebar extends Component {
           mainmenu: MENUITEMSFOROFFICER,
         });
       }
+      if (this.props.currentAdmin.status === "Delivery") {
+        this.setState({ mainmenu: MENUITEMSFORDELIVERY });
+      }
     }
     setTimeout(() => {
       this.state.mainmenu.filter((items) => {
@@ -139,6 +143,9 @@ export class sidebar extends Component {
       }
       if (nextProps.currentAdmin.status == "Officer") {
         this.setState({ mainmenu: MENUITEMSFOROFFICER });
+      }
+      if (nextProps.currentAdmin.status === "Delivery") {
+        this.setState({ mainmenu: MENUITEMSFORDELIVERY });
       }
     }
     // setTimeout(() => {

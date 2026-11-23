@@ -81,6 +81,10 @@ class CartonBreakdown extends Component {
       return <span className="cb-pill cb-pill-alg"><i className="fa fa-check-circle" /> From ALG</span>;
     if (g.cartons.length)
       return <span className="cb-pill cb-pill-manual"><i className="fa fa-pencil" /> Entered manually</span>;
+    if (a && a.rejected === "placeholder")
+      return <span className="cb-pill cb-pill-miss"><i className="fa fa-ban" /> Placeholder number — not looked up</span>;
+    if (a && a.rejected === "ambiguous")
+      return <span className="cb-pill cb-pill-miss"><i className="fa fa-ban" /> Shared number — {a.matched} other cartons ignored</span>;
     if (a && a.error)
       return <span className="cb-pill cb-pill-miss"><i className="fa fa-exclamation-circle" /> ALG lookup failed</span>;
     return <span className="cb-pill cb-pill-miss"><i className="fa fa-question-circle" /> Not on ALG</span>;
@@ -89,6 +93,7 @@ class CartonBreakdown extends Component {
   renderTable(g) {
     const showProduct = g.cartons.some((c) => c.productName || c.imageUrl);
     const showCargo = g.cartons.some((c) => n(c.ratePerKg) !== null || cargoChargeOf(c) !== null);
+    const showMark = g.cartons.some((c) => c.shippingMark);
     return (
       <div className="cb-table-wrap">
         <table className="cb-table">
@@ -96,6 +101,7 @@ class CartonBreakdown extends Component {
             <tr>
               <th className="cb-idx">#</th>
               <th>Carton</th>
+              {showMark && <th>Shipping mark</th>}
               {showProduct && <th>Product</th>}
               <th className="cb-num">CN weight</th>
               <th className="cb-num">BD weight</th>
@@ -119,6 +125,9 @@ class CartonBreakdown extends Component {
                     {c.source === "manual" && g.source !== "manual" && <span className="cb-mini">manual</span>}
                     {c.lotNo && <div className="cb-sub">Lot {c.lotNo}</div>}
                   </td>
+                  {showMark && (
+                    <td>{c.shippingMark ? <span className="cb-mark">{c.shippingMark}</span> : <span className="cb-muted">—</span>}</td>
+                  )}
                   {showProduct && (
                     <td>
                       <div className="cb-product">
@@ -163,7 +172,7 @@ class CartonBreakdown extends Component {
   }
 
   render() {
-    const { cartons, trackingNumbers, loading } = this.props;
+    const { cartons, trackingNumbers, loading, lookups } = this.props;
     const groups = groupCartonsByTracking(cartons || [], trackingNumbers || []);
     const totals = cartonTotals(cartons || []);
 
@@ -228,7 +237,11 @@ class CartonBreakdown extends Component {
                         <span className="cb-none-ic"><i className="fa fa-inbox" /></span>
                         <span>
                           <b>No cartons yet</b>
-                          <small>ALG doesn&apos;t know this number. Add its cartons from Update → Tracking &amp; Cartons.</small>
+                          <small>
+                            {lookups && lookups[g.trackingNo] && lookups[g.trackingNo].rejected
+                              ? "This tracking number isn't this parcel's own, so ALG wasn't used. Enter the real tracking number, or add cartons from Update → Tracking & Cartons."
+                              : "ALG doesn't know this number. Add its cartons from Update → Tracking & Cartons."}
+                          </small>
                         </span>
                       </>
                     )}

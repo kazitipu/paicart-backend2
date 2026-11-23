@@ -8,6 +8,7 @@ import { getAllUsersRedux } from "../../actions/index";
 import { connect } from "react-redux";
 import NotificationModal from "./notificationModal";
 import ChangeUserStatusModal from "./changeUserStatusModal";
+import AddressMigrationPanel from "./addressMigrationPanel.jsx";
 /* Newest customer first: user ids are assigned in ascending order, so the
    biggest id is the most recent signup. Sorts a copy - the array handed in is
    the redux users array when no search is active, and sorting in place
@@ -90,6 +91,7 @@ export class List_user extends Component {
           userObj={this.state.userObj}
         />
         <Breadcrumb title="User List" parent="Users" />
+        <AddressMigrationPanel />
         <div className="container-fluid">
           <div className="card">
             <div

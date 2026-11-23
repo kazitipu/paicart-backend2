@@ -74,6 +74,7 @@ import ClientDue from "./components/client-due/clientDue.jsx";
 import ClientBills from "./components/accounts/clientBills.jsx";
 import AppDialogHost from "./components/common/appDialog.jsx";
 import DeliveryRequests from "./components/delivery-requests/deliveryRequests.jsx";
+import DeliveryPage from "./components/delivery/deliveryPage.jsx";
 import Message from "./components/messages/App";
 import D2DRates from "./components/d2d-rates/d2dRates";
 import D2DRates2 from "./components/1688-rates/d2dRates";
@@ -622,6 +623,12 @@ class Root extends Component {
                   exact
                   path={`${process.env.PUBLIC_URL}/delivery-requests`}
                   component={DeliveryRequests}
+                />
+
+                <Route
+                  exact
+                  path={`${process.env.PUBLIC_URL}/delivery`}
+                  component={DeliveryPage}
                 />
 
                 <Route

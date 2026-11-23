@@ -151,7 +151,7 @@ class UpdateRequestModal extends Component {
 
     await this.props.updateShipmentRequestRedux({
       ...this.props.singleRequest,
-      ...this.state,
+      ...this.formState(),
       trackingNumbers: this.state.trackingNumbers,
       trackingNo: this.state.trackingNumbers.join(","),
       cartons: this.state.cartons,
@@ -368,6 +368,12 @@ class UpdateRequestModal extends Component {
       this.setState({ closing: false });
       this.closeModalNow();
     }, 200);
+  };
+
+  /* the form's fields — UI flags (closing animation) aren't saved */
+  formState = () => {
+    const { closing, ...fields } = this.state;
+    return fields;
   };
 
   closeModalNow = () => {

@@ -552,6 +552,15 @@ export const MENUITEMSFORADMIN = [
     ],
   },
   {
+    path: "/delivery",
+    title: "Delivery",
+    icon: Truck,
+    color: "#f97316",
+    type: "link",
+    badgeType: "primary",
+    active: false,
+  },
+  {
     title: "Ship for me",
     icon: Anchor,
     color: "#0d9488",
@@ -1255,6 +1264,15 @@ export const MENUITEMSFORPARTNER = [
     ],
   },
   {
+    path: "/delivery",
+    title: "Delivery",
+    icon: Truck,
+    color: "#f97316",
+    type: "link",
+    badgeType: "primary",
+    active: false,
+  },
+  {
     title: "Ship for me",
     icon: Anchor,
     color: "#0d9488",
@@ -1440,6 +1458,15 @@ export const MENUITEMSFORACCOUNTS = [
     title: "Dashboard",
     icon: Home,
     color: "#4466f2",
+    type: "link",
+    badgeType: "primary",
+    active: false,
+  },
+  {
+    path: "/delivery",
+    title: "Delivery",
+    icon: Truck,
+    color: "#f97316",
     type: "link",
     badgeType: "primary",
     active: false,
@@ -2111,5 +2138,19 @@ export const MENUITEMSFOROFFICER = [
         type: "link",
       },
     ],
+  },
+];
+
+/* Delivery staff ("Delivery" role): only the Delivery section — the layout
+   also sends them to /delivery from any other page (components/app.jsx). */
+export const MENUITEMSFORDELIVERY = [
+  {
+    path: "/delivery",
+    title: "Delivery",
+    icon: Truck,
+    color: "#f97316",
+    type: "link",
+    badgeType: "primary",
+    active: false,
   },
 ];

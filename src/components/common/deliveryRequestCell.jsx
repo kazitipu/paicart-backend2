@@ -1,8 +1,12 @@
 import React, { Component } from "react";
+import ReactDOM from "react-dom";
+import DeliveryAddressPicker from "./deliveryAddressPicker.jsx";
 import { X, Edit2, AlertTriangle } from "react-feather";
 import { Badge, Button, TONES } from "./listUi";
+import "./modalAnim.css";
 import { showDialog } from "./appDialog.jsx";
-import { getSingleUser, saveDeliveryRequest, sendInAppNotifications } from "../../firebase/firebase.utils";
+import { AddressCard } from "./addressAndChips.jsx";
+import { addAddressToUserBook, getSingleUser, saveDeliveryRequest, sendInAppNotifications, updateParcelRecordFields } from "../../firebase/firebase.utils";
 import {
   DELIVERY_METHODS,
   DELIVERY_STATUSES,
@@ -10,7 +14,6 @@ import {
   deliveryAddressOf,
   deliveryDue,
   deliveryMethod,
-  formatAddress,
   isBilled,
   isFullyPaid,
   recordIdOf,
@@ -21,6 +24,9 @@ import {
  * chose it — the customer, or Paicart staff — or "None"; Edit lets staff
  * set or change it. Keeps its own copy after a save so the row updates
  * without reloading the list. kind: 'order' | 'request' | 'ship'. */
+
+/* must match the close animation in modalAnim.css */
+const CLOSE_MS = 180;
 
 const field = { width: "100%", border: "1px solid #e2e8f0", borderRadius: 9, padding: "8px 10px", fontSize: 13, color: "#0f172a" };
 
@@ -50,25 +56,59 @@ export class AdminDeliveryModal extends Component {
       user: null,
       saving: false,
       notify: true,
+      closing: false,
+      /* chosen delivery address (null = the record's / customer's default) */
+      address: null,
+      addressIsNew: false,
+      saveToBook: true,
     };
   }
 
   componentDidMount() {
     const { record } = this.props;
     if (record && record.userId) getSingleUser(record.userId).then((user) => this.setState({ user })).catch(() => {});
+    window.addEventListener("keydown", this.onKey);
   }
 
+  componentWillUnmount() {
+    window.removeEventListener("keydown", this.onKey);
+    clearTimeout(this.closeTimer);
+  }
+
+  onKey = (e) => {
+    if (e.key === "Escape") this.requestClose();
+  };
+
+  /* play the close animation, then let the parent remove the dialog */
+  requestClose = (force) => {
+    if ((this.state.saving && !force) || this.state.closing) return;
+    this.setState({ closing: true });
+    this.closeTimer = setTimeout(() => this.props.onClose(), CLOSE_MS);
+  };
+
   save = async () => {
-    const { kind, record, admin, onSaved, onClose } = this.props;
+    const { kind, record, admin, onSaved } = this.props;
     const { method, status, note, user, notify } = this.state;
     const m = deliveryMethod(method);
     if (!m) return showDialog({ tone: "warning", title: "Choose a delivery method", message: "Pick one of the four delivery methods first." });
     this.setState({ saving: true });
     const who = (admin && (admin.name || admin.email)) || "Paicart";
     try {
-      const address = deliveryAddressOf(record, user);
+      const address = this.state.address || deliveryAddressOf(record, user);
+      if (m.key !== "office_pickup" && !address) {
+        this.setState({ saving: false });
+        return showDialog({ tone: "warning", title: "Add a delivery address", message: "Choose one of the customer's addresses or add a new one with the Pathao picker." });
+      }
+      if (this.state.address && this.state.addressIsNew && this.state.saveToBook && record.userId) {
+        await addAddressToUserBook(record.userId, this.state.address);
+      }
       const request = buildAdminDeliveryRequest(kind, record, { method, status, note, enteredBy: who, address });
       await saveDeliveryRequest(kind, recordIdOf(kind, record), request);
+      /* keep the record's own delivery address in step (orders / requests /
+         bookings that were placed without one get it here) */
+      if (address && (this.state.address || !record.deliveryAddress)) {
+        await updateParcelRecordFields(kind, recordIdOf(kind, record), { deliveryAddress: address });
+      }
       let notified = "";
       if (notify && record.userId) {
         try {
@@ -84,7 +124,8 @@ export class AdminDeliveryModal extends Component {
         }
       }
       onSaved(request);
-      onClose();
+      this.setState({ saving: false });
+      this.requestClose(true);
       showDialog({ tone: "success", title: "Delivery request saved", message: `${m.label} · ${DELIVERY_STATUSES[status].label}.${notified}` });
     } catch (e) {
       this.setState({ saving: false });
@@ -93,20 +134,24 @@ export class AdminDeliveryModal extends Component {
   };
 
   render() {
-    const { kind, record, onClose } = this.props;
-    const { method, status, note, user, saving, notify } = this.state;
+    const { kind, record } = this.props;
+    const { method, status, note, user, saving, notify, closing } = this.state;
+    const onClose = () => this.requestClose();
     const paid = isFullyPaid(kind, record);
     const due = deliveryDue(kind, record);
     const chosen = deliveryMethod(method);
     const address = deliveryAddressOf(record, user);
     const current = record.deliveryRequest;
 
-    return (
+    /* rendered at page level: inside a table cell the row's overflow and
+       transforms clipped the dialog and shifted it sideways */
+    return ReactDOM.createPortal(
       <div
-        onClick={() => !saving && onClose()}
+        className={`pc-modal-backdrop${closing ? " is-closing" : ""}`}
+        onClick={onClose}
         style={{ position: "fixed", top: 0, right: 0, bottom: 0, left: 0, zIndex: 1080, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
       >
-        <div onClick={(e) => e.stopPropagation()} style={{ width: "min(520px,100%)", maxHeight: "90vh", overflowY: "auto", background: "#fff", borderRadius: 16, boxShadow: "0 24px 60px rgba(15,23,42,.3)", textAlign: "left" }}>
+        <div className="pc-modal-dialog" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif', width: "min(520px,100%)", maxHeight: "90vh", overflowY: "auto", background: "#fff", borderRadius: 16, boxShadow: "0 24px 60px rgba(15,23,42,.3)", textAlign: "left" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", borderBottom: "1px solid #e9eef5" }}>
             <div>
               <div style={{ fontWeight: 800, fontSize: 16, color: "#0f172a" }}>Delivery request</div>
@@ -160,10 +205,25 @@ export class AdminDeliveryModal extends Component {
             <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", margin: "10px 0 4px" }}>Note</div>
             <textarea value={note} maxLength={500} onChange={(e) => this.setState({ note: e.target.value })} rows={2} style={{ ...field, resize: "vertical" }} placeholder="Phone, time, vehicle…" />
 
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", margin: "10px 0 4px" }}>Deliver to</div>
-            <div style={{ fontSize: 12, color: address ? "#334155" : "#94a3b8", background: "#f8fafc", border: "1px solid #eef2f7", borderRadius: 10, padding: "8px 10px" }}>
-              {address ? formatAddress(address) : user === null && record.userId ? "Loading customer address…" : "No address on record"}
-            </div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#475569", margin: "12px 0 6px" }}>Deliver to</div>
+            {user === null && record.userId ? (
+              <div style={{ fontSize: 12, color: "#8391a5" }}>Loading the customer's addresses…</div>
+            ) : (
+              <DeliveryAddressPicker
+                current={(record.deliveryRequest && record.deliveryRequest.address) || record.deliveryAddress || null}
+                book={(user && user.addressBook) || []}
+                value={this.state.address || address}
+                customerName={(user && user.displayName) || record.displayName || ""}
+                customerPhone={(user && (user.mobileNo || user.phoneNumber)) || ""}
+                onChange={(a, isNew) => this.setState({ address: a, addressIsNew: !!isNew })}
+              />
+            )}
+            {this.state.addressIsNew && record.userId && (
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#4b5a70", marginTop: 8 }}>
+                <input type="checkbox" checked={this.state.saveToBook} onChange={(e) => this.setState({ saveToBook: e.target.checked })} />
+                Also save this address to the customer's address book
+              </label>
+            )}
 
             <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#334155", marginTop: 12 }}>
               <input type="checkbox" checked={notify} onChange={(e) => this.setState({ notify: e.target.checked })} />
@@ -176,7 +236,8 @@ export class AdminDeliveryModal extends Component {
             <Button onClick={this.save} disabled={saving || !method}>{saving ? "Saving…" : "Save"}</Button>
           </div>
         </div>
-      </div>
+      </div>,
+      document.body
     );
   }
 }

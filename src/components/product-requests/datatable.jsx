@@ -341,10 +341,27 @@ export class Datatable extends Component {
           Date: order ? order.date : "",
           "Booking Id": order ? order.bookingId : "",
           Store: order ? order.store : "",
-          Total:
-            order && order.orderTotal
-              ? `${Math.round(order.orderTotal)}Tk`
-              : "",
+          /* the full bill: product + China courier + other cost + the
+             customer's shipping charge, less discounts (same math as the
+             payment modal and the details page) */
+          Total: order ? (
+            getOrderPayable(order) > 0 ? (
+              <div style={{ lineHeight: 1.35 }}>
+                <b>{`${Math.round(getOrderPayable(order)).toLocaleString("en-IN")}Tk`}</b>
+                {parseFloat(order.shippingChargeCustomer) > 0 ? (
+                  <div style={{ fontSize: 10.5, color: "#64748b", fontWeight: 500 }}>
+                    incl. shipping {Math.round(parseFloat(order.shippingChargeCustomer)).toLocaleString("en-IN")}Tk
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 10.5, color: "#94a3b8", fontWeight: 500 }}>shipping not billed yet</div>
+                )}
+              </div>
+            ) : (
+              ""
+            )
+          ) : (
+            ""
+          ),
           "Order Number": order ? order.orderNumber : "",
           "Tracking No": order ? order.trackingNo : "",
         });

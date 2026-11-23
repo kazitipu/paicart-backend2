@@ -1,4 +1,5 @@
 import React, { Component } from "react";
+import { Redirect } from "react-router-dom";
 import Sidebar from "./common/sidebar_components/sidebar";
 import Right_sidebar from "./common/right-sidebar";
 import Footer from "./common/footer";
@@ -114,6 +115,16 @@ export class App extends Component {
     }
   }
   render() {
+    /* Delivery staff only ever see the Delivery section */
+    const { currentAdmin } = this.props;
+    const base = process.env.PUBLIC_URL || "";
+    if (
+      currentAdmin &&
+      currentAdmin.status === "Delivery" &&
+      !window.location.pathname.startsWith(`${base}/delivery`)
+    ) {
+      return <Redirect to={`${base}/delivery`} />;
+    }
     return (
       <div>
         <div className="page-wrapper">

@@ -347,10 +347,21 @@ export class Datatable extends Component {
               : request && parseFloat(request.weight) > 0
               ? `${request.weight} (est.)`
               : "",
-          "Per Kg": request ? request.result && request.result.perKg : "",
+          /* actual rate / total once the parcel is weighed and billed, else
+             the booking-time estimate, labelled as such (like Weight) */
+          "Per Kg": request
+            ? parseFloat(request.customerRate) > 0
+              ? request.customerRate
+              : request.result && request.result.perKg
+                ? `${request.result.perKg} (est.)`
+                : ""
+            : "",
           Total: request
-            ? request.result &&
-              `${request.result.result ? `${request.result.result}Tk` : ""}`
+            ? parseFloat(request.shippingChargeCustomer) > 0
+              ? `${Math.round(parseFloat(request.shippingChargeCustomer)).toLocaleString("en-IN")}Tk`
+              : request.result && request.result.result
+                ? `${Math.round(parseFloat(request.result.result)).toLocaleString("en-IN")}Tk (est.)`
+                : ""
             : "",
           "Tracking No": request ? request.trackingNo : "",
         });

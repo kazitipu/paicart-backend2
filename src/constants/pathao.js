@@ -1,3 +1,4 @@
+import { auth } from "../firebase/firebase.utils";
 /* Browser side of the Pathao Courier integration.
  *
  * Every call goes to /pathao-api/... on our own dev server (src/setupProxy.js),
@@ -158,12 +159,43 @@ const listOf = (prefix) => (data) => {
 
 export const getPathaoStores = () =>
   unwrap(axios.get(`${API}/stores`)).then(listOf("store"));
+/* Location lists (address picker): the deployed Cloud Function the website
+   and app use (works on the hosted admin; needs the admin to be signed in),
+   falling back to the local /pathao-api dev proxy. Kept for the session. */
+const FUNCTIONS_BASE = "https://asia-south1-paicart.cloudfunctions.net";
+const locationCache = new Map();
+const fromFunction = async (level, parentId) => {
+  const user = auth.currentUser;
+  if (!user) throw new Error("Not signed in");
+  const token = await user.getIdToken();
+  const res = await fetch(`${FUNCTIONS_BASE}/pathaoLocations?level=${level}${parentId ? `&parentId=${parentId}` : ""}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Pathao locations failed (${res.status})`);
+  /* same shape as the proxy lists below; areas carry homeDelivery */
+  return (data.list || []).map((x) => ({ ...x, home_delivery_available: x.homeDelivery !== false }));
+};
+const locations = (key, level, parentId, proxyCall) => {
+  if (!locationCache.has(key)) {
+    locationCache.set(
+      key,
+      fromFunction(level, parentId)
+        .catch(() => proxyCall())
+        .catch((e) => {
+          locationCache.delete(key);
+          throw e;
+        })
+    );
+  }
+  return locationCache.get(key);
+};
 export const getPathaoCities = () =>
-  unwrap(axios.get(`${API}/city-list`)).then(listOf("city"));
+  locations("cities", "cities", null, () => unwrap(axios.get(`${API}/city-list`)).then(listOf("city")));
 export const getPathaoZones = (cityId) =>
-  unwrap(axios.get(`${API}/cities/${cityId}/zone-list`)).then(listOf("zone"));
+  locations(`zones_${cityId}`, "zones", cityId, () => unwrap(axios.get(`${API}/cities/${cityId}/zone-list`)).then(listOf("zone")));
 export const getPathaoAreas = (zoneId) =>
-  unwrap(axios.get(`${API}/zones/${zoneId}/area-list`)).then(listOf("area"));
+  locations(`areas_${zoneId}`, "areas", zoneId, () => unwrap(axios.get(`${API}/zones/${zoneId}/area-list`)).then(listOf("area")));
 
 export const DELIVERY_TYPES = [
   { id: 48, label: "Normal delivery" },
@@ -202,3 +234,9 @@ export const findByName = (list, name) => {
  *      cod_percentage, additional_charge, plan_id } */
 export const getPathaoPricePlan = (payload) =>
   unwrap(axios.post(`${API}/merchant/price-plan`, payload));
+
+/* A booked parcel's live status (Delivery page refresh).
+ * -> { consignment_id, merchant_order_id, order_status, order_status_slug,
+ *      updated_at, invoice_id } */
+export const getPathaoOrderInfo = (consignmentId) =>
+  unwrap(axios.get(`${API}/orders/${encodeURIComponent(consignmentId)}/info`));

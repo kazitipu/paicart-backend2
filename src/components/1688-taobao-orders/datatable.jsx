@@ -51,7 +51,6 @@ import OrderPrintSlip from "../common/orderPrintSlip.jsx";
 import { shopKeyOf } from "../../constants/shopGroups";
 import { joinList, withUnit } from "../../constants/displayList";
 import FraudCheckPanel from "./fraudCheckPanel.jsx";
-import PathaoBookingModal from "./pathaoBookingModal.jsx";
 import {
   BulkActionBar,
   BulkPaymentModal,
@@ -118,7 +117,6 @@ const ACT = {
     borderColor: "#FF6A00",
     color: "#fff",
   },
-  pathao: { ...ACT_BASE, borderColor: "#f3b4bc", color: "#c8102e" },
   danger: { ...ACT_BASE, borderColor: "#fecaca", color: "#b91c1c" },
   disabled: { ...ACT_BASE, color: "#94a3b8", cursor: "not-allowed" },
 };
@@ -149,7 +147,6 @@ export class Datatable extends Component {
       // Set only by the Pick button on the New Orders tab - that click is
       // what triggers the Pathao fraud check.
       fraudCheckOrder: null,
-      pathaoOrder: null,
       bulkSelected: [], // orderIds ticked for bulk status / payment
       bulkAction: null, // "status" | "payment"
     };
@@ -1323,7 +1320,10 @@ export class Datatable extends Component {
                   <i className="fa fa-undo" /> Unpick
                 </div>
               )}
+              {/* Pathao booking is done on the Delivery page only; this just
+                  shows an existing booking */}
               {this.props.orderStatus == "Paicart-warehouse" &&
+                order.pathaoBooking?.consignmentId &&
                 !(currentAdmin && currentAdmin.status == "Partner") && (
                   <div style={{ marginTop: order.agentId ? 8 : 0 }}>
                     {order.pathaoBooking?.consignmentId ? (
@@ -1352,15 +1352,7 @@ export class Datatable extends Component {
                           {order.pathaoBooking.consignmentId}
                         </div>
                       </div>
-                    ) : (
-                      <div
-                        role="button"
-                        onClick={() => this.setState({ pathaoOrder: order })}
-                        style={ACT.pathao}
-                      >
-                        <i className="fa fa-truck" /> Pathao Booking
-                      </div>
-                    )}
+                    ) : null}
                   </div>
                 )}
               {!order.agentId && (
@@ -1647,20 +1639,36 @@ export class Datatable extends Component {
       <span style={{ color: "#cbd5e1" }}>{children}</span>
     );
 
-    const custom = (id, header, minWidth, render, gap) => ({
-      id,
-      Header: <b>{header}</b>,
-      accessor: (r) => r["Order Id"],
-      sortable: false,
-      minWidth,
-      style: { textAlign: "left", alignItems: "flex-start" },
-      Cell: (row) => {
-        const order = orderOf(row);
-        return order ? (
-          <div style={gap ? { ...CELL, gap } : CELL}>{render(order, row)}</div>
-        ) : null;
-      },
-    });
+    /* every data column sits in its own soft box (Actions stays plain) so a
+       row reads as tidy, equal-height cards */
+    const BOX = {
+      background: "#f8fafc",
+      border: "1px solid #e9eef5",
+      borderRadius: 10,
+      padding: "10px 12px",
+      gap: 8,
+      height: "100%",
+    };
+    const custom = (id, header, minWidth, render, gap) => {
+      const boxed = id !== "g-actions";
+      const base = boxed ? { ...CELL, ...BOX } : CELL;
+      return {
+        id,
+        Header: <b>{header}</b>,
+        accessor: (r) => r["Order Id"],
+        sortable: false,
+        minWidth,
+        style: boxed
+          ? { textAlign: "left", alignItems: "stretch", padding: "6px 4px" }
+          : { textAlign: "left", alignItems: "flex-start" },
+        Cell: (row) => {
+          const order = orderOf(row);
+          return order ? (
+            <div style={gap ? { ...base, gap } : base}>{render(order, row)}</div>
+          ) : null;
+        },
+      };
+    };
     /* Reuses an existing column's cell (badges, buttons and their modals)
        under a small section title. */
     const group = (id, header, minWidth, parts, opts = {}) =>
@@ -1804,68 +1812,43 @@ export class Datatable extends Component {
         );
       }),
 
-      custom("g-1688", "1688 quoted", 170, (order) => {
+      /* One 1688 cost column: the actual figure once synced from 1688's
+         order detail (the seller may re-price after the order is placed),
+         else the quote 1688 returned when the order was created — with the
+         difference shown when both exist. */
+      custom("g-1688", "1688 cost", 180, (order) => {
         const q = quoted1688(order);
-        if (!q) return <Muted>Not ordered yet</Muted>;
+        const actualRaw = parseFloat(order.actual1688OrderTotal);
+        const synced = Number.isFinite(actualRaw);
+        if (!q && !synced) return <Muted>Not ordered yet</Muted>;
+        const total = synced ? actualRaw : q.total;
+        const shipping = synced ? num(order.actual1688OrderShippingFee) : q.postFee;
+        const diff = synced && q ? actualRaw - q.total : null;
+        const rate = num(order.exchangeRate);
         return (
           <div>
-            <Headline>{rmb(q.total)}</Headline>
-            <KV label="Post fee" value={rmb(q.postFee)} />
-            <KV
-              label="In taka"
-              value={
-                num(order.exchangeRate) > 0 ? (
-                  tk(q.total * num(order.exchangeRate), 2)
-                ) : (
-                  <Muted>—</Muted>
-                )
-              }
-            />
+            <Headline color={synced ? "#6d28d9" : undefined}>{rmb(total)}</Headline>
+            <div style={{ fontSize: 10.5, fontWeight: 600, color: synced ? "#6d28d9" : "#94a3b8", marginTop: -2, marginBottom: 4 }}>
+              {synced ? "Actual · synced from 1688" : "Quoted · not synced yet"}
+            </div>
+            <KV label="Post fee" value={rmb(shipping)} />
+            <KV label="In taka" value={rate > 0 ? tk(total * rate, 2) : <Muted>—</Muted>} />
             <Divider />
             <KV
               label="Rmb rate"
-              value={
-                num(order.exchangeRate) > 0 ? (
-                  `৳${num(order.exchangeRate)}`
-                ) : (
-                  <span style={{ color: "#94a3b8" }}>Not set</span>
-                )
-              }
+              value={rate > 0 ? `৳${rate}` : <span style={{ color: "#94a3b8" }}>Not set</span>}
             />
-          </div>
-        );
-      }),
-
-      custom("g-1688-actual", "1688 actual", 160, (order) => {
-        const actual = parseFloat(order.actual1688OrderTotal);
-        if (!Number.isFinite(actual)) return <Muted>Not synced yet</Muted>;
-        const shipping = num(order.actual1688OrderShippingFee);
-        const q = quoted1688(order);
-        const diff = q ? actual - q.total : null;
-        return (
-          <div>
-            <Headline color="#6d28d9">{rmb(actual)}</Headline>
-            <KV label="Shipping" value={rmb(shipping)} />
             {diff !== null && (
-              <>
-                <Divider />
-                <KV
-                  label="vs quoted"
-                  strong
-                  value={
-                    Math.abs(diff) < 0.005
-                      ? "Same"
-                      : `${diff > 0 ? "+" : "−"}${rmb(Math.abs(diff))}`
-                  }
-                  color={
-                    Math.abs(diff) < 0.005
-                      ? "#64748b"
-                      : diff > 0
-                        ? "#dc2626"
-                        : "#16a34a"
-                  }
-                />
-              </>
+              <KV
+                label="vs quoted"
+                strong
+                value={
+                  Math.abs(diff) < 0.005
+                    ? "Same"
+                    : `${diff > 0 ? "+" : "−"}${rmb(Math.abs(diff))} (quoted ${rmb(q.total)})`
+                }
+                color={Math.abs(diff) < 0.005 ? "#64748b" : diff > 0 ? "#dc2626" : "#16a34a"}
+              />
             )}
           </div>
         );
@@ -4567,18 +4550,6 @@ export class Datatable extends Component {
             apply={this.applyBulkPayment}
             onClose={() => this.setState({ bulkAction: null })}
             onFinished={() => this.setState({ bulkSelected: [] })}
-          />
-        )}
-        {this.state.pathaoOrder && (
-          <PathaoBookingModal
-            order={this.state.pathaoOrder}
-            onClose={() => this.setState({ pathaoOrder: null })}
-            onBooked={(pathaoBooking) =>
-              this.props.updateOrderApiRedux({
-                orderId: this.state.pathaoOrder.orderId,
-                pathaoBooking,
-              })
-            }
           />
         )}
       </Fragment>

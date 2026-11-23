@@ -12,6 +12,7 @@ import {
   mergeCartons,
   legacyFieldsFromCartons,
   cartonTotals,
+  cleanupPollutedFields,
 } from "../../../constants/cartons";
 import {
   getDisplayPaymentState,
@@ -23,7 +24,12 @@ import { getOfferDiscount } from "../../../constants/offerMath";
 import { getShipmentMode, readyStepLabel } from "../../../constants/shipment";
 import { statusDisplay } from "../../../constants/statusDisplay";
 import CartonBreakdown from "../cartons/CartonBreakdown.jsx";
+import ManualCartonForm from "../cartons/ManualCartonForm.jsx";
+import { AddressCard } from "../addressAndChips.jsx";
 import OrderPrintSlip from "../orderPrintSlip.jsx";
+import DetailActions from "./detailActions.jsx";
+import { ProductsComparison, PurchaseReference, RequestedProducts } from "./purchaseSections.jsx";
+import { FreightSummary, DeliveryRequestBar, TrackingTimeline, JourneyTracking } from "./orderSections.jsx";
 import "./ParcelDetailsPage.css";
 
 /* Details page for a Ship For Me booking (kind "ship"), a 1688 order
@@ -199,6 +205,27 @@ const Card = ({ title, icon, extra, children, className = "" }) => (
   </section>
 );
 
+/* A list (lots, shipping marks, carton nos) as compact chips — the first few
+   shown, the rest behind "+N more" so a long list never floods the card. */
+const ChipList = ({ items, max = 6 }) => {
+  const [all, setAll] = React.useState(false);
+  const list = (items || []).filter(Boolean);
+  if (!list.length) return null;
+  const shown = all ? list : list.slice(0, max);
+  return (
+    <span className="pd-chips">
+      {shown.map((v, i) => (
+        <span key={`${v}-${i}`} className="pd-chip" title={v}>{v}</span>
+      ))}
+      {list.length > max && (
+        <button type="button" className="pd-chip pd-chip-more" onClick={() => setAll(!all)}>
+          {all ? "Show less" : `+${list.length - max} more`}
+        </button>
+      )}
+    </span>
+  );
+};
+
 const Field = ({ label, value, wide, mono, icon, children }) => {
   const content = children !== undefined ? children : value;
   const empty =
@@ -330,21 +357,38 @@ export class ParcelDetailsPage extends Component {
         canonical(cartons) !== canonical(record.cartons || []) ||
         canonical(nos) !== canonical(storedNos);
       const foundCount = nos.filter((t) => algByTracking[t] && algByTracking[t].found).length;
+      const rejected = nos.filter((t) => algByTracking[t] && algByTracking[t].rejected);
+      const removed = (record.cartons || []).length - cartons.length;
       let next = record;
       let note = `${foundCount} of ${nos.length} tracking no${nos.length === 1 ? "" : "s"} found on ALG`;
+      if (rejected.length) note += ` · ${rejected.length} not used (placeholder / shared number)`;
 
-      if (cartons.length && changed) {
+      /* a placeholder / shared number may also have left other customers'
+         shipping marks and cargo rates on the record itself */
+      let cleanup = {};
+      if (rejected.length) {
+        const user = this.state.user || (record.userId ? await getSingleUser(record.userId) : null);
+        cleanup = cleanupPollutedFields(record, cartons, user);
+      }
+      const cleaned = Object.keys(cleanup).length > 0;
+
+      /* also save when a rejected number's wrong cartons were cleared out */
+      if ((changed && (cartons.length || (record.cartons || []).length)) || cleaned) {
         const patch = {
           cartons,
           trackingNumbers: nos,
           ...legacyFieldsFromCartons(cartons),
+          ...cleanup,
         };
         /* the old Details sync stamped this too */
         if (foundCount > 0 && !has(record.cargoCompany)) patch.cargoCompany = "ALG Limited";
         const saved = await updateParcelRecordFields(this.props.kind, id, patch);
         next = saved || { ...record, ...patch };
-        note += " · cartons saved to the record";
-        if (!silent) toast.success("Cartons updated from ALG");
+        const fixedFields = [cleanup.shippingMark !== undefined && "shipping mark", cleanup.cargoRate !== undefined && "cargo rate"].filter(Boolean);
+        note += rejected.length && (removed > 0 || cleaned)
+          ? ` · cleaned other customers' data (${[removed > 0 && `${removed} carton${removed === 1 ? "" : "s"}`, ...fixedFields].filter(Boolean).join(", ")})`
+          : " · cartons saved to the record";
+        if (!silent) toast.success(rejected.length && (removed > 0 || cleaned) ? "Removed other customers' cartons and details" : "Cartons updated from ALG");
       } else if (!silent) {
         toast.info(cartons.length ? "Cartons are already up to date" : "No cartons found on ALG");
       }
@@ -409,6 +453,8 @@ export class ParcelDetailsPage extends Component {
                 <OrderPrintSlip record={r} kind={cfg.slipKind} />
               </span>
             )}
+            {/* the list's own Payment and Update dialogs, right here */}
+            <DetailActions kind={this.props.kind} record={r} onChanged={() => this.load()} />
             <Link to={`${P}${cfg.invoice(id)}`} className="pd-btn pd-btn-ghost">
               <i className="fa fa-file-text-o" /> Invoice
             </Link>
@@ -524,90 +570,108 @@ export class ParcelDetailsPage extends Component {
     );
   }
 
+  /* Order details that used to sit in the "Order items" card, shown at the
+     bottom of the Products & price comparison card */
+  renderOrderExtras(r) {
+    return (
+      <>
+        <div className="pd-grid ps-extras">
+          <Field label="Website" value={r.websiteName} />
+          <Field label="Ordered" value={[r.orderedDate, r.orderedTime].filter(has).join(" ")} />
+          <Field label="Payment link">
+            {has(r.paymentLink1688) ? <ExtLink href={r.paymentLink1688}>Open link</ExtLink> : null}
+          </Field>
+          <Field label="Payment id" value={r.paymentLinkId} mono />
+          <Field label="Picked" value={[r.pickedDate, r.pickedTime].filter(has).join(" at ")} />
+          <Field label="Agent carton" value={r.agentCarton} />
+          {r.deliveryAddress && (
+            <Field label="Delivery address" wide>
+              <AddressCard address={r.deliveryAddress} compact />
+            </Field>
+          )}
+        </div>
+        {has(r.additionalNotes) && (
+          <div className="pd-note">
+            <b>Notes:</b> {r.additionalNotes}
+          </div>
+        )}
+        {(has(r.chineseIssue) || has(r.returnInfo)) && (
+          <div className="pd-banner pd-banner-red" style={{ marginTop: 10 }}>
+            {r.chineseIssue} {r.returnInfo}
+          </div>
+        )}
+        <div className="pd-docs">
+          <Thumb src={r.imageUrl} label="CN warehouse image" />
+          <Thumb src={r.imageUrlBd} label="BD warehouse image" />
+        </div>
+      </>
+    );
+  }
+
+  /* Product requests are bought by hand (any store), so their purchase
+     details live here rather than in a 1688 card */
+  renderRequestPurchase(r) {
+    const nos = trackingNumbersOf(r);
+    const rmbPaid = num(r.purchasingRmb);
+    const rate = num(r.exchangeRate);
+    return (
+      <div className="pd-subsection">
+        <div className="pd-subtitle">Purchase</div>
+        <div className="pd-grid">
+          <Field label="Supplier" value={r.purchasingSupplier} />
+          <Field label="Supplier payment" value={r.purchasingSupplierPayment} />
+          <Field label="Purchasing RMB" value={rmbPaid > 0 ? `¥${rmbPaid}` : ""} />
+          <Field label="Exchange rate" value={rate > 0 ? `৳${rate} / ¥` : ""} />
+          <Field label="Buying cost" value={rmbPaid > 0 && rate > 0 ? tk(rmbPaid * rate) : ""} />
+          <Field label="Order number (store)" value={r.orderNumber} mono />
+          <Field label="Purchase link" wide>
+            {has(r.purchaseLink) ? <ExtLink href={r.purchaseLink} /> : null}
+          </Field>
+          <Field label="China tracking" wide>
+            {nos.length ? <ChipList items={nos} /> : null}
+          </Field>
+        </div>
+      </div>
+    );
+  }
+
   renderProductCard(r) {
     const { kind } = this.props;
-    if (kind === "order") {
-      const currency = num(r.currency);
-      return (
-        <Card title="Order items" icon="fa-shopping-cart" className="pd-span-full">
-          <div className="pd-grid pd-grid-4" style={{ marginBottom: 14 }}>
-            <Field label="1688 order no" value={r.orderNumber} mono />
-            <Field label="Shop" value={r.shopName} />
-            <Field label="Website" value={r.websiteName} />
-            <Field label="Ordered" value={[r.orderedDate, r.orderedTime].filter(has).join(" ")} />
-            <Field label="Payment link">
-              {has(r.paymentLink1688) ? <ExtLink href={r.paymentLink1688}>Open link</ExtLink> : null}
-            </Field>
-            <Field label="Payment id" value={r.paymentLinkId} mono />
-            <Field label="Picked" value={[r.pickedDate, r.pickedTime].filter(has).join(" at ")} />
-            <Field label="Agent carton" value={r.agentCarton} />
-          </div>
-          {(r.items || []).map((item, idx) => (
-            <div className="pd-item" key={item.id || idx}>
-              <div className="pd-item-head">
-                <span className="pd-item-name">{item.name || "Item"}</span>
-                <span className="pd-item-links">
-                  <ExtLink href={item.detail_url}>Product link</ExtLink>
-                  {has(item.id) && (
-                    <ExtLink href={`https://paicart.com/product/${item.id}`}>Paicart link</ExtLink>
-                  )}
-                  {has(item.shippingRate) && <span className="pd-muted">Shipping ৳{item.shippingRate}/kg</span>}
-                </span>
-              </div>
-              <div className="pd-skus">
-                {(item.skus || []).map((sku, j) => (
-                  <div className="pd-sku" key={j}>
-                    <img src={cdn(sku.image || item.picture)} alt="" />
-                    <div className="pd-sku-text">
-                      <div className="pd-sku-var">
-                        {[sku.color, sku.size].filter(has).join(" / ") || "Default"}
-                      </div>
-                      <div className="pd-muted">
-                        {num(sku.totalQuantity)} pcs × {tk(sku.price)}
-                        {currency > 0 && ` (¥${(num(sku.price) / currency).toFixed(2)})`}
-                      </div>
-                    </div>
-                    <b className="pd-sku-total">{tk(num(sku.price) * num(sku.totalQuantity))}</b>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-          {has(r.additionalNotes) && (
-            <div className="pd-note">
-              <b>Notes:</b> {r.additionalNotes}
-            </div>
-          )}
-          {(has(r.chineseIssue) || has(r.returnInfo)) && (
-            <div className="pd-banner pd-banner-red" style={{ marginTop: 10 }}>
-              {r.chineseIssue} {r.returnInfo}
-            </div>
-          )}
-          {this.renderPurchase(r)}
-          <div className="pd-docs">
-            <Thumb src={r.imageUrl} label="CN warehouse image" />
-            <Thumb src={r.imageUrlBd} label="BD warehouse image" />
-          </div>
-        </Card>
-      );
-    }
+    /* website orders: the items live in the Products & price comparison
+       card at the top of the page */
+    if (kind === "order") return null;
     if (kind === "request") {
       return (
-        <Card title="Product information" icon="fa-shopping-bag">
-          <div className="pd-grid">
-            <Field label="Product" value={r.productType || r.productName} />
-            <Field label="Variant" value={r.productVariant} />
-            <Field label="Store" value={r.store} />
-            <Field label="Quantity" value={has(r.productQuantity) ? `${r.productQuantity} pcs` : ""} />
-            <Field label="Unit price" value={has(r.unitPrice) ? tk(r.unitPrice) : ""} />
-            <Field label="Shipping rate" value={has(r.shippingRate) ? `৳${r.shippingRate}/kg` : ""} />
-            <Field label="Product link" wide>
-              {has(r.productUrl) ? <ExtLink href={r.productUrl} /> : null}
-            </Field>
-            {has(r.warehouse) && <Field label="Warehouse" value={r.warehouse} wide />}
-            {has(r.note) && <Field label="Note" value={r.note} wide />}
+        <Card title="Booking information" icon="fa-cube" className="pd-req-booking">
+          {/* product, store, variant, quantity, unit price and the product
+              link are in the Requested product table at the top */}
+          {(has(r.warehouse) || has(r.note) || r.deliveryAddress) && (
+            <div className="pd-grid">
+              {has(r.warehouse) && <Field label="Warehouse" value={r.warehouse} wide />}
+              {has(r.note) && <Field label="Note" value={r.note} wide />}
+              {r.deliveryAddress && (
+                <Field label="Delivery address" wide>
+                  <AddressCard address={r.deliveryAddress} compact />
+                </Field>
+              )}
+            </div>
+          )}
+          {this.renderRequestPurchase(r)}
+          {/* what the customer asked for — the real figures are under Shipping */}
+          <div className="pd-subsection">
+            <div className="pd-subtitle">Booking (estimate)</div>
+            <div className="pd-grid">
+              <Field label="Shipment mode (booked)" value={getShipmentMode(r)} />
+              <Field label="Est. weight (by customer)" value={num(r.weight) > 0 ? `${r.weight} kg` : ""} />
+              <Field label="Carton qty (declared)" value={has(r.ctnQuantity) ? String(r.ctnQuantity) : ""} />
+              <Field label="Total CBM (declared)" value={has(r.totalCbm) ? String(r.totalCbm) : ""} />
+              <Field label="Shipping rate (booking)" value={has(r.shippingRate) ? `৳${r.shippingRate}/kg` : ""} />
+              <Field
+                label="Est. shipping total"
+                value={num(r.weight) > 0 && num(r.shippingRate) > 0 ? `৳${Math.round(num(r.weight) * num(r.shippingRate)).toLocaleString("en-IN")}` : ""}
+              />
+            </div>
           </div>
-          {this.renderPurchase(r)}
         </Card>
       );
     }
@@ -629,28 +693,22 @@ export class ParcelDetailsPage extends Component {
           {has(r.warehouse) && <Field label="Warehouse address" value={r.warehouse} wide />}
           {has(r.note) && <Field label="Note" value={r.note} wide />}
         </div>
-      </Card>
-    );
-  }
-
-  renderPurchase(r) {
-    const fields = [r.purchaseLink, r.purchasingSupplier, r.purchasingRmb, r.exchangeRate, r.couponUsed];
-    if (!fields.some((f) => has(f) && f !== null)) return null;
-    return (
-      <div className="pd-subsection">
-        <div className="pd-subtitle">Purchase</div>
-        <div className="pd-grid pd-grid-3">
-          <Field label="Purchase link">{has(r.purchaseLink) ? <ExtLink href={r.purchaseLink}>Open</ExtLink> : null}</Field>
-          <Field label="Supplier" value={r.purchasingSupplier} />
-          <Field label="Supplier payment" value={r.purchasingSupplierPayment} />
-          <Field label="Purchasing RMB" value={has(r.purchasingRmb) ? `¥${r.purchasingRmb}` : ""} />
-          <Field label="Exchange rate" value={r.exchangeRate} />
-          <Field
-            label="Total buying cost"
-            value={has(r.purchasingRmb) && has(r.exchangeRate) ? tk(num(r.purchasingRmb) * num(r.exchangeRate)) : ""}
-          />
+        {/* what the customer booked — the real figures are under Shipping */}
+        <div className="pd-subsection">
+          <div className="pd-subtitle">Booking (estimate)</div>
+          <div className="pd-grid">
+            <Field label="Shipment mode (booked)" value={getShipmentMode(r)} />
+            <Field label="Est. weight (by customer)" value={num(r.weight) > 0 ? `${r.weight} kg` : ""} />
+            <Field label="Carton qty (declared)" value={has(r.ctnQuantity) ? String(r.ctnQuantity) : ""} />
+            <Field label="Total CBM (declared)" value={has(r.totalCbm) ? String(r.totalCbm) : ""} />
+            <Field label="Booking rate" value={r.result && num(r.result.perKg) > 0 ? `৳${r.result.perKg}/kg` : ""} />
+            <Field
+              label="Booking total"
+              value={r.result && num(r.result.result) > 0 ? `৳${Math.round(num(r.result.result)).toLocaleString("en-IN")}` : ""}
+            />
+          </div>
         </div>
-      </div>
+      </Card>
     );
   }
 
@@ -668,14 +726,16 @@ export class ParcelDetailsPage extends Component {
       <Card title="Shipping information" icon="fa-truck">
         {/* weight at a glance */}
         <div className="pd-wstats">
-          <div className="pd-wstat">
-            <span className="pd-wstat-ic"><i className="fa fa-balance-scale" /></span>
-            <div>
-              <span className="pd-wstat-label">Est. weight</span>
-              <b>{est > 0 ? `${est} kg` : "Not given"}</b>
-              <small>by customer</small>
+          {kind === "order" && (
+            <div className="pd-wstat">
+              <span className="pd-wstat-ic"><i className="fa fa-balance-scale" /></span>
+              <div>
+                <span className="pd-wstat-label">Est. weight</span>
+                <b>{est > 0 ? `${est} kg` : "Not given"}</b>
+                <small>by customer</small>
+              </div>
             </div>
-          </div>
+          )}
           <div className={`pd-wstat pd-wstat-main${actual > 0 ? "" : " is-pending"}`}>
             <span className="pd-wstat-ic"><i className="fa fa-check-circle" /></span>
             <div>
@@ -700,17 +760,53 @@ export class ParcelDetailsPage extends Component {
               </small>
             </div>
           </div>
+          {kind !== "order" && (
+            /* real volume from the cartons (the declared CBM is under Booking) */
+            <div className={`pd-wstat${totals.count ? "" : " is-pending"}`}>
+              <span className="pd-wstat-ic pd-ic-blue"><i className="fa fa-cube" /></span>
+              <div>
+                <span className="pd-wstat-label">Actual CBM</span>
+                <b>{totals.count ? totals.cbm : "Pending"}</b>
+                <small>{totals.count ? "from the cartons" : "no carton data"}</small>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="pd-grid pd-grid-rows">
           <Field icon="fa-plane" label="Shipment mode" value={getShipmentMode(r)} />
           <Field icon="fa-building-o" label="Cargo company" value={r.cargoCompany} />
-          <Field icon="fa-tags" label="Lot no" value={lots.join(", ")} />
-          <Field icon="fa-bookmark-o" label="Shipping mark" value={uniq(marks).join(", ")} />
-          <Field icon="fa-archive" label="Carton qty" value={r.ctnQuantity || (totals.count ? String(totals.count) : "")} />
-          <Field icon="fa-cube" label="Total CBM" value={r.totalCbm} />
-          <Field icon="fa-user-o" label="Customer rate" value={num(r.customerRate) > 0 ? `৳${r.customerRate}/kg` : ""} />
-          <Field icon="fa-truck" label="Cargo rate" value={uniq(listOf(r.cargoRate)).join(", ")} />
+          {/* website orders show lot, shipping mark, cartons and CBM carton
+              by carton in Tracking & cartons */}
+          {kind !== "order" && (
+            <Field icon="fa-tags" label={lots.length > 1 ? `Lot no (${lots.length})` : "Lot no"}>
+              {lots.length ? <ChipList items={lots} /> : ""}
+            </Field>
+          )}
+          <Field icon="fa-user-o" label={kind !== "order" ? "Actual rate" : "Customer rate"} value={num(r.customerRate) > 0 ? `৳${r.customerRate}/kg` : ""} />
+          {kind !== "order" && (
+            <>
+              {/* weight and freight side by side in one row */}
+              <Field icon="fa-balance-scale" label="Actual weight" value={actual > 0 ? `${actual} kg` : ""} />
+              <Field
+                icon="fa-calculator"
+                label="Actual freight"
+                value={
+                  num(r.shippingChargeCustomer) > 0
+                    ? `৳${Math.round(num(r.shippingChargeCustomer)).toLocaleString("en-IN")}`
+                    : actual > 0 && num(r.customerRate) > 0
+                      ? `৳${Math.round(actual * num(r.customerRate)).toLocaleString("en-IN")}`
+                      : ""
+                }
+              />
+            </>
+          )}
+          {/* the cargo rate is per carton in Tracking & cartons */}
+          {kind === "order" && (
+            <Field icon="fa-truck" label={uniq(listOf(r.cargoRate)).length > 1 ? `Cargo rate (${uniq(listOf(r.cargoRate)).length})` : "Cargo rate"}>
+              {uniq(listOf(r.cargoRate)).length ? <ChipList items={uniq(listOf(r.cargoRate))} max={4} /> : ""}
+            </Field>
+          )}
           {has(r.abroadWarehouseAddress) && <Field icon="fa-map-marker" label="Abroad warehouse" value={r.abroadWarehouseAddress} wide />}
           {has(r.bangladeshWarehouseAddress) && <Field icon="fa-map-marker" label="Bangladesh warehouse" value={r.bangladeshWarehouseAddress} wide />}
           {has(r.deliveredBy) && <Field icon="fa-motorcycle" label="Delivered through" value={r.deliveredBy} />}
@@ -719,35 +815,11 @@ export class ParcelDetailsPage extends Component {
               icon="fa-home"
               label="Delivery address"
               wide
-              value={[addr.name, addr.mobileNo, addr.address, addr.thana, addr.district, addr.division].filter(has).join(", ")}
-            />
-          )}
-          {/* Chosen by the customer from To Receive (customer app/website):
-              office_pickup | van_truck | pathao | sundorbon */}
-          {r.deliveryRequest && r.deliveryRequest.method && (
-            <Field icon="fa-paper-plane-o" label="Customer delivery request" wide>
-              <span>
-                <b>{r.deliveryRequest.label || r.deliveryRequest.method}</b>
-                {" "}
-                <Pill tone={r.deliveryRequest.status === "requested" ? "blue" : r.deliveryRequest.status === "cancelled" ? "gray" : "green"}>
-                  {r.deliveryRequest.status || "requested"}
-                </Pill>
-                <br />
-                <small style={{ color: "#64748b" }}>
-                  Requested {r.deliveryRequest.requestedDate || ""}
-                  {r.deliveryRequest.fullyPaid
-                    ? " · invoice was fully paid"
-                    : ` · due at request ৳${Math.round(num(r.deliveryRequest.dueAtRequest)).toLocaleString("en-IN")}`}
-                </small>
-                {has(r.deliveryRequest.note) && (
-                  <>
-                    <br />
-                    <small style={{ color: "#334155" }}>Note: {r.deliveryRequest.note}</small>
-                  </>
-                )}
-              </span>
+            >
+              <AddressCard address={addr} compact />
             </Field>
           )}
+          {/* the delivery request has its own bar at the bottom of the page */}
         </div>
         {kind === "ship" && (
           <div className="pd-docs">
@@ -813,12 +885,29 @@ export class ParcelDetailsPage extends Component {
           </div>
         }
       >
+        {algByTracking &&
+          nos
+            .filter((t) => algByTracking[t] && algByTracking[t].rejected)
+            .map((t) => (
+              <div key={t} className="pd-alert pd-alert-warn">
+                <i className="fa fa-exclamation-triangle" />
+                <div>
+                  <b>Tracking no "{t}" was not used.</b>{" "}
+                  {algByTracking[t].rejected === "placeholder"
+                    ? "It looks like a placeholder, so it was not looked up on ALG."
+                    : `On ALG it matches ${algByTracking[t].matched} cartons of many different customers, so they were not added here.`}{" "}
+                  Enter this parcel's real tracking number to load its cartons.
+                </div>
+              </div>
+            ))}
         <CartonBreakdown
           cartons={r.cartons || []}
           trackingNumbers={nos}
           lookups={algByTracking}
           loading={syncing}
         />
+        {/* same manual entry as the Update dialog, saved straight away */}
+        <ManualCartonForm kind={this.props.kind} record={r} onSaved={() => this.load()} />
       </Card>
     );
   }
@@ -834,10 +923,13 @@ export class ParcelDetailsPage extends Component {
         num(r.receivedWeight) > 0 && num(r.customerRate) > 0
           ? Math.round(num(r.receivedWeight) * num(r.customerRate))
           : 0;
+      /* the booking-time estimate stays visible next to the actual freight */
+      if (num(r.result && r.result.result) > 0) {
+        const perKg = r.result.perKg ? ` × ৳${r.result.perKg}` : "";
+        add(`Booking estimate · ${num(r.weight) || "?"} kg${perKg}`, r.result.result, { hint: true });
+      }
       if (weightCharge)
-        add(`Freight · ${r.receivedWeight} kg × ৳${r.customerRate}`, weightCharge, { hint: true });
-      else if (num(r.result && r.result.result) > 0)
-        add("Estimated charge (booking)", r.result.result, { hint: true });
+        add(`Actual freight · ${r.receivedWeight} kg × ৳${r.customerRate}`, weightCharge, { hint: true });
       add("Packaging & other cost", r.otherCost, { hint: true });
       add("Discount", r.discount, { minus: true, hint: true });
       add("Shipping charge (customer)", r.shippingChargeCustomer, { always: true });
@@ -1045,17 +1137,41 @@ export class ParcelDetailsPage extends Component {
     return (
       <div className="pd-page">
         {this.renderHeader(record, id)}
+        {/* website orders only — product requests aren't bought through the 1688 API */}
+        {this.props.kind === "order" && <ProductsComparison kind="order" record={record} />}
+        {this.props.kind === "request" && <RequestedProducts record={record} />}
         <div className="pd-layout">
           <div className="pd-main">
-            {this.renderTimeline(record)}
+            {/* orders / requests: the Tracking timeline at the bottom covers it */}
+            {/* product requests get the journey tracker at the bottom */}
+            {this.props.kind === "ship" && this.renderTimeline(record)}
             {this.renderProductCard(record)}
-            {this.renderShipping(record)}
+            {/* orders / requests: freight summary, tracking & cartons and the
+                details cards cover shipping */}
+            {this.props.kind === "ship" && this.renderShipping(record)}
+            {this.props.kind === "order" && <PurchaseReference kind="order" record={record} />}
+            {this.props.kind !== "ship" && <FreightSummary kind={this.props.kind} record={record} />}
             {this.renderCartons(record)}
           </div>
           <aside className="pd-side">
             {this.renderBilling(record)}
             {this.renderPayments(record)}
+            {this.props.kind === "order" && (
+              <Card title="Order details" icon="fa-info-circle" className="pd-soft">
+                {this.renderOrderExtras(record)}
+              </Card>
+            )}
           </aside>
+        </div>
+        <div className="os-bottom">
+          {/* delivery request: website orders, product requests and Ship For Me */}
+          <DeliveryRequestBar kind={this.props.kind} record={record} onChanged={() => this.load()} />
+          {this.props.kind === "order" && (
+            <TrackingTimeline kind="order" record={record} stages={stagesOf("order", record)} />
+          )}
+          {this.props.kind === "request" && (
+            <JourneyTracking kind="request" record={record} stages={stagesOf("request", record)} />
+          )}
         </div>
       </div>
     );

@@ -53,6 +53,19 @@ const STATUS_LABELS = {
   rejected: "Rejected",
 };
 
+/* the stored status each tab lists (same mapping componentDidMount loads) */
+const TAB_STATUS = {
+  new: "Pending",
+  "rates-given": "Rates Provided",
+  "received-in-warehouse": "Received in Warehouse",
+  "ready-for-fly": "Ready for fly",
+  "bangladesh-customs": "Bangladesh customs",
+  "custom-released": "Bangladesh warehouse",
+  "Paicart-warehouse": "Paicart warehouse",
+  delivered: "Delivered",
+  rejected: "Reject",
+};
+
 export class New extends Component {
   constructor(props) {
     super(props);
@@ -573,6 +586,13 @@ export class New extends Component {
     // searching a user id gives that one customer's figures.
     const searching = Boolean(this.state.searchFor.trim());
     let displayedRequests = this.props.allShipmentRequests || [];
+    /* A booking moved to another status (from its Update dialog, bulk
+       actions or the details page) leaves this tab at once instead of
+       lingering until the next reload. Search looks across every status. */
+    const tabStatus = TAB_STATUS[this.props.match.params.bookingStatus];
+    if (!searching && tabStatus) {
+      displayedRequests = displayedRequests.filter((r) => (r.status || "Pending") === tabStatus);
+    }
     if (searching) {
       displayedRequests = (this.state.searchPool || displayedRequests).filter(
         (request) => this.matchesSearch(request, this.state.searchFor),

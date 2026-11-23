@@ -1,5 +1,6 @@
 import React, { Component } from "react";
 import "./updateRequestModal.css";
+import "../shipment-request/updateRequestModal.css";
 import {
   updateOrderApiRedux,
   uploadTransactionRedux,
@@ -98,10 +99,6 @@ class UpdateRequestModal extends Component {
   handleSubmit = async (event) => {
     event.preventDefault();
     const { order, ordersApi } = this.props;
-    if (!order.purchasingRmb && this.state.purchasingRmb == "") {
-      alert("You must enter purchasing rmb");
-      return;
-    }
     console.log(order);
     let date = new Date();
     let shipmentStatusScore = 1;
@@ -122,7 +119,7 @@ class UpdateRequestModal extends Component {
     }
     await this.props.updateOrderApiRedux({
       ...order,
-      ...this.state,
+      ...this.formState(),
       trackingNumbers: this.state.trackingNumbers || [],
       trackingNo: (this.state.trackingNumbers || []).join(","),
       cartons: this.state.cartons || [],
@@ -241,7 +238,13 @@ class UpdateRequestModal extends Component {
   };
 
   /* Shared by the corner X and the Cancel button: reset the form, close. */
-  closeModal = () => {
+  /* the form's fields — UI flags (closing animation) aren't saved */
+  formState = () => {
+    const { closing, ...fields } = this.state;
+    return fields;
+  };
+
+  closeModalNow = () => {
     this.setState({
       orderTotal: "",
       note: "",
@@ -255,761 +258,269 @@ class UpdateRequestModal extends Component {
     this.props.startToggleModal(null);
   };
 
+  /* Play the closing animation, then reset and close for real. */
+  closeModal = () => {
+    if (this.state.closing) return;
+    this.setState({ closing: true });
+    setTimeout(() => {
+      this.setState({ closing: false });
+      this.closeModalNow();
+    }, 200);
+  };
+
+  /* Live figure shown (read-only) and saved as shippingChargeCustomer — same
+     formula handleSubmit uses. */
+  customerTotal = () =>
+    parseInt(
+      (this.state.otherCost ? parseInt(this.state.otherCost) : 0) +
+        this.state.receivedWeight * this.state.customerRate -
+        this.state.refund -
+        this.state.discount
+    );
+
+  field = (label, name, { type = "text", placeholder, hint, span, required } = {}) => (
+    <label className={`urm-field ${span ? `urm-span-${span}` : ""}`}>
+      <span className="urm-label">{label}{required ? " *" : ""}</span>
+      <input
+        type={type}
+        name={name}
+        className="urm-input"
+        placeholder={placeholder || label}
+        onChange={this.handleChange}
+        value={this.state[name]}
+        step={type === "number" ? "any" : undefined}
+        required={required}
+      />
+      {hint && <span className="urm-hint">{hint}</span>}
+    </label>
+  );
+
+  textarea = (label, name, placeholder, span = 3) => (
+    <label className={`urm-field urm-span-${span}`}>
+      <span className="urm-label">{label}</span>
+      <textarea
+        name={name}
+        className="urm-input urm-textarea"
+        placeholder={placeholder}
+        onChange={this.handleChange}
+        value={this.state[name] || ""}
+      />
+    </label>
+  );
+
   render() {
-    const { order, currency } = this.props;
-
+    if (this.props.toggleModal) return null;
+    const { order: maybeOrder, currency } = this.props;
+    const order = maybeOrder || {};
+    const rate = order.currency || (currency && currency.taka) || 0;
     let totalRmbAmount = 0;
-    if (order) {
-      order.items.map((item) => {
-        item.skus.map((sku) => {
-          totalRmbAmount += parseFloat(
-            (sku.price * sku.totalQuantity) /
-              (order.currency ? order.currency : currency.taka)
-          );
-
-          console.log(
-            parseFloat(
-              (sku.price * sku.totalQuantity) /
-                (order.currency ? order.currency : currency.taka)
-            )
-          );
-        });
-      });
-    }
+    let pcs = 0;
+    (order.items || []).forEach((item) =>
+      (item.skus || []).forEach((sku) => {
+        if (rate) totalRmbAmount += (sku.price * sku.totalQuantity) / rate;
+        pcs += parseInt(sku.totalQuantity, 10) || 0;
+      })
+    );
+    const firstItem = (order.items || [])[0] || {};
+    const thumb = ((firstItem.skus || [])[0] || {}).image || firstItem.picture;
+    const total = this.customerTotal();
+    const cargoTotal = (this.state.cartons || []).length
+      ? cartonTotals(this.state.cartons).cargoCharge
+      : String(this.state.shippingChargeCargo || "").split(",").reduce((a, v) => a + (parseFloat(v) || 0), 0);
+    const margin = cargoTotal ? (Number.isFinite(total) ? total : 0) - cargoTotal : null;
+    const tk = (n) => `৳${(Number.isFinite(n) ? n : 0).toLocaleString("en-IN")}`;
 
     return (
-      <>
-        <div
-          className={
-            this.props.toggleModal
-              ? "modal fade show"
-              : "modal fade show visible-modal"
-          }
-          id="request_popup"
-          tabIndex="-1"
-          role="dialog"
-          aria-hidden="true"
-        >
-          <div
-            className="modal-dialog modal-dialog-centered request_popup"
-            role="document"
-          >
-            <div
-              className="modal-content visible-modal-content-3"
-              style={{
-                backgroundColor: "rgb(68 0 97)",
-                maxHeight: "700px",
-                overflowY: "scroll",
-              }}
-            >
-              <div className="modal-body p-0">
-                <section className="pos-rel bg-light-gray">
-                  <div className="container-fluid p-3">
-                    <a
-                      onClick={this.closeModal}
-                      className="close"
-                      data-dismiss="modal"
-                      aria-label="Close"
-                    >
-                      <i
-                        className="icofont-close-line"
-                        style={{ color: "#334155", fontSize: 22, cursor: "pointer" }}
-                      ></i>
-                    </a>
-                    <div className="d-lg-flex justify-content-end no-gutters mb-spacer-md">
-                      {/* <div className="col bg-fixed bg-img-7 request_pag_img">
-                        &nbsp;
-                      </div> */}
-
-                      <div className="col">
-                        <div className="px-3 m-5">
-                          <h2
-                            className="h2-xl mb-3 fw-6 pb-2"
-                            style={{
-                              color: "white",
-                              textTransform: "none",
-                              fontSize: "200%",
-                              borderBottom: "2px dotted white",
-                            }}
-                          >
-                            Order Id: {order && order.orderId}
-                          </h2>
-                          <div
-                            className="row"
-                            style={{
-                              color: "white",
-                              fontWeight: "bold",
-                              paddingLeft: 10,
-                            }}
-                          >
-                            Total Order: {parseFloat(totalRmbAmount).toFixed(2)}{" "}
-                            Rmb
-                          </div>
-                          <form
-                            onSubmit={this.handleSubmit}
-                            className="rounded-field mt-4"
-                          >
-                            <div className="form-row mb-4">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Order Total (in tk)
-                                </label>
-
-                                <input
-                                  type="text"
-                                  name="orderTotal"
-                                  className="form-control"
-                                  placeholder="Enter Total Price"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.orderTotal}
-                                  required
-                                />
-                              </div>
-
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Local Courier Charge (in tk)
-                                </label>
-
-                                <input
-                                  type="text"
-                                  name="localShipping"
-                                  className="form-control"
-                                  placeholder="Enter Local shipping charge in china"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.localShipping}
-                                  required
-                                />
-                              </div>
-                            </div>
-
-                            <div className="form-row mb-4">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Change Status
-                                </label>
-
-                                <select
-                                  title=""
-                                  name="orderStatus"
-                                  className="custom-select"
-                                  aria-required="true"
-                                  aria-invalid="false"
-                                  onChange={this.handleChange}
-                                  value={this.state.orderStatus}
-                                  style={{ fontSize: ".8rem" }}
-                                >
-                                  <option value="">Change Status</option>
-
-                                  <option value="Purchased">Purchased</option>
-                                  <option value="Ready for fly">
-                                    Ready for fly
-                                  </option>
-                                  <option value="Bangladesh customs">
-                                    Bangladesh customs
-                                  </option>
-                                  <option value="Bangladesh warehouse">
-                                    Custom released
-                                  </option>
-                                  <option value="Paicart warehouse">
-                                    Paicart warehouse
-                                  </option>
-                                  <option value="Delivered">Delivered</option>
-                                  <option value="Reject">Reject</option>
-                                </select>
-                              </div>
-                            </div>
-
-                            <div className="form-row mb-4">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Order Number (china website)
-                                </label>
-
-                                <input
-                                  type="text"
-                                  name="orderNumber"
-                                  className="form-control"
-                                  placeholder="Enter 1688/taobao/aliexpress order Number"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.orderNumber}
-                                />
-                              </div>
-                            </div>
-
-                            <div className="form-row mb-4">
-                              <div className="col-12">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 4,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Tracking numbers &amp; cartons
-                                </label>
-                                <div
-                                  style={{
-                                    background: "#f6f8fb",
-                                    borderRadius: 14,
-                                    padding: 12,
-                                    border: "1px solid #e6ebf2",
-                                  }}
-                                >
-                                  <CartonManager
-                                    trackingNumbers={this.state.trackingNumbers || []}
-                                    cartons={this.state.cartons || []}
-                                    onChange={({ trackingNumbers, cartons }) =>
-                                      this.setState({ trackingNumbers, cartons })
-                                    }
-                                    onUseTotalWeight={(kg) => this.setState({ receivedWeight: kg })}
-                                    fetchKey={
-                                      !this.props.toggleModal && order
-                                        ? order.orderId || order.bookingId || "open"
-                                        : null
-                                    }
-                                  />
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="form-row mb-4">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Purchase link (china website)
-                                </label>
-
-                                <input
-                                  type="text"
-                                  name="purchaseLink"
-                                  className="form-control"
-                                  placeholder="Enter Product purchase link"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.purchaseLink}
-                                />
-                              </div>
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Purchasing RMB (china website)
-                                </label>
-
-                                <input
-                                  type="number"
-                                  name="purchasingRmb"
-                                  className="form-control"
-                                  placeholder="Enter Product purchasing RMB"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.purchasingRmb}
-                                  required
-                                />
-                              </div>
-                            </div>
-                            <div className="form-row mb-4">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Purchasing supplier Info
-                                </label>
-                                <input
-                                  type="text"
-                                  name="purchasingSupplier"
-                                  className="form-control"
-                                  placeholder="Enter Supplier information"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.purchasingSupplier}
-                                />
-                              </div>
-                            </div>
-                            <div className="form-row mb-4">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Purchasing supplier Payment method
-                                </label>
-
-                                <input
-                                  type="text"
-                                  name="purchasingSupplierPayment"
-                                  className="form-control"
-                                  placeholder="Enter purchasing supplier payment method"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.purchasingSupplierPayment}
-                                />
-                              </div>
-                            </div>
-                            <div className="form-row mb-4">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Purchasing supplier (QR code)
-                                </label>
-
-                                <input
-                                  type="text"
-                                  name="purchasingSupplierQr"
-                                  className="form-control"
-                                  placeholder="Enter purchasing supplier qr"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.purchasingSupplierQr}
-                                />
-                              </div>
-                            </div>
-                            <div className="form-row mb-4">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Today exchage rate
-                                </label>
-
-                                <input
-                                  type="text"
-                                  name="exchangeRate"
-                                  className="form-control"
-                                  placeholder="Enter Exchange Rate"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.exchangeRate}
-                                />
-                              </div>
-                            </div>
-
-                            <div
-                              className="form-row"
-                              style={{
-                                color: "white",
-                                marginTop: 10,
-                                marginBottom: 10,
-                                borderBottom: "1px solid white",
-                              }}
-                            >
-                              Shipping Information
-                            </div>
-                            <div className="form-row mb-2">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Shipping Mark
-                                </label>
-
-                                <input
-                                  type="text"
-                                  name="shippingMark"
-                                  className="form-control"
-                                  placeholder="Shipping Mark"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.shippingMark}
-                                />
-                              </div>
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Cargo company
-                                </label>
-
-                                <input
-                                  type="text"
-                                  name="cargoCompany"
-                                  className="form-control"
-                                  placeholder="Cargo company"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.cargoCompany}
-                                />
-                              </div>
-                            </div>
-                            <div className="form-row mb-2">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Lot Number
-                                </label>
-
-                                <input
-                                  type="text"
-                                  name="lotNo"
-                                  className="form-control"
-                                  placeholder="Lot Number"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.lotNo}
-                                />
-                              </div>
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Carton Number
-                                </label>
-
-                                <input
-                                  type="text"
-                                  name="ctnNo"
-                                  className="form-control"
-                                  placeholder="Carton Number"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.ctnNo}
-                                />
-                              </div>
-                            </div>
-                            <div className="form-row mb-2">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Received weight
-                                </label>
-
-                                <input
-                                  type="number"
-                                  name="receivedWeight"
-                                  className="form-control"
-                                  placeholder="Received weight"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.receivedWeight}
-                                />
-                              </div>
-                            </div>
-                            <div className="form-row mb-2">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Customs & Shipping rate
-                                </label>
-
-                                <input
-                                  type="number"
-                                  name="customerRate"
-                                  className="form-control"
-                                  placeholder="Customer rate"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.customerRate}
-                                />
-                              </div>
-                            </div>
-                            <div className="form-row mb-2">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Refund amount
-                                </label>
-
-                                <input
-                                  type="number"
-                                  name="refund"
-                                  className="form-control"
-                                  placeholder="Refund amount"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.refund}
-                                />
-                              </div>
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Discount
-                                </label>
-
-                                <input
-                                  type="number"
-                                  name="discount"
-                                  className="form-control"
-                                  placeholder="Discount"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.discount}
-                                />
-                              </div>
-                            </div>
-                            <div className="form-row mb-2">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Packaging & other cost
-                                </label>
-
-                                <input
-                                  type="number"
-                                  name="otherCost"
-                                  className="form-control"
-                                  placeholder="Packaging & other cost"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.otherCost}
-                                />
-                              </div>
-                            </div>
-                            <div className="form-row mb-2">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Total shipping charge (customer)
-                                </label>
-
-                                <input
-                                  type="text"
-                                  name="shippingChargeCustomer"
-                                  className="form-control"
-                                  placeholder="Total shipping charge (customer)"
-                                  style={{ fontSize: ".8rem" }}
-                                  value={parseInt(
-                                    (this.state.otherCost
-                                      ? parseInt(this.state.otherCost)
-                                      : 0) +
-                                      this.state.receivedWeight *
-                                        this.state.customerRate -
-                                      this.state.refund -
-                                      this.state.discount
-                                  )}
-                                  readOnly={true}
-                                />
-                              </div>
-                            </div>
-                            <div className="form-row mb-2">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Abroad warehouse address
-                                </label>
-                                <textarea
-                                  type="text"
-                                  name="abroadWarehouseAddress"
-                                  className="form-control"
-                                  placeholder="Abroad warehouse address"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.abroadWarehouseAddress}
-                                />
-                              </div>
-                            </div>
-                            <div className="form-row mb-2">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Bangladesh warehouse address
-                                </label>
-                                <textarea
-                                  type="text"
-                                  name="bangladeshWarehouseAddress"
-                                  className="form-control"
-                                  placeholder="Bangladesh warehouse address"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.bangladeshWarehouseAddress}
-                                />
-                              </div>
-                            </div>
-                            <div className="form-row mb-2">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Delivered Through (include reference)
-                                </label>
-                                <textarea
-                                  type="text"
-                                  name="deliveredBy"
-                                  className="form-control"
-                                  placeholder="Enter delivered by"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.deliveredBy}
-                                />
-                              </div>
-                            </div>
-                            <div className="form-row mb-2">
-                              <div className="col">
-                                <label
-                                  style={{
-                                    color: "white",
-                                    marginBottom: 0,
-                                    fontSize: 13,
-                                  }}
-                                >
-                                  Refund note
-                                </label>
-                                <textarea
-                                  type="text"
-                                  name="refundNote"
-                                  className="form-control"
-                                  placeholder="Enter refund note"
-                                  style={{ fontSize: ".8rem" }}
-                                  onChange={this.handleChange}
-                                  value={this.state.refundNote}
-                                />
-                              </div>
-                            </div>
-
-                            <div className="form-row">
-                              <div
-                                className="col pt-3"
-                                style={{
-                                  display: "flex",
-                                  justifyContent: "flex-end",
-                                }}
-                              >
-                                <button
-                                  type="button"
-                                  className="btn btn-light"
-                                  onClick={this.closeModal}
-                                  data-dismiss="modal"
-                                  style={{
-                                    marginRight: 8,
-                                    border: "1px solid #cbd5e1",
-                                    color: "#334155",
-                                  }}
-                                >
-                                  Cancel
-                                </button>
-                                <button
-                                  type="submit"
-                                  className="btn btn-secondary"
-                                >
-                                  Update
-                                  <i className="icofont-rounded-right"></i>
-                                </button>
-                              </div>
-                            </div>
-                          </form>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </section>
+      <div className={`urm-overlay ${this.state.closing ? "is-closing" : ""}`} role="dialog" aria-modal="true">
+        <form className="urm-modal" onSubmit={this.handleSubmit}>
+          {/* Header */}
+          <div className="urm-head">
+            {thumb ? (
+              <img className="urm-thumb" src={String(thumb).replace("cbu01.alicdn.com", "global-img-cdn.1688.com")} alt="" />
+            ) : (
+              <div className="urm-thumb urm-thumb-empty">🛒</div>
+            )}
+            <div className="urm-head-text">
+              <div className="urm-kicker">Update website order</div>
+              <h3 className="urm-title">Order #{order.orderId}</h3>
+              <div className="urm-chips">
+                {firstItem.name && <span className="urm-chip">{String(firstItem.name).slice(0, 48)}</span>}
+                {order.orderStatus && <span className="urm-chip">Status: {statusDisplay(order.orderStatus)}</span>}
+                {order.shopName && <span className="urm-chip">{order.shopName}</span>}
+                <span className="urm-chip">{pcs} pcs</span>
+                <span className="urm-chip">Total ¥{totalRmbAmount.toFixed(2)}</span>
+                {order.displayName && <span className="urm-chip">👤 {order.displayName}</span>}
               </div>
             </div>
+            <button type="button" className="urm-x" onClick={this.closeModal} aria-label="Close">
+              &times;
+            </button>
           </div>
-        </div>
-      </>
+
+          <div className="urm-body">
+            {/* Order & status */}
+            <section className="urm-card">
+              <div className="urm-card-title"><span className="urm-dot" />Order &amp; Status</div>
+              <div className="urm-grid">
+                {this.field("Order total (৳)", "orderTotal", { required: true, placeholder: "Enter total price" })}
+                {this.field("Local courier charge (৳)", "localShipping", { required: true, placeholder: "China local shipping" })}
+                <label className="urm-field">
+                  <span className="urm-label">Status *</span>
+                  <select name="orderStatus" className="urm-input" onChange={this.handleChange} value={this.state.orderStatus} required>
+                    <option value="">Change status</option>
+                    <option value="Purchased">Purchased</option>
+                    <option value="Received in Warehouse">Received in Warehouse</option>
+                    <option value="Ready for fly">Ready for fly</option>
+                    <option value="Bangladesh customs">Bangladesh customs</option>
+                    <option value="Bangladesh warehouse">Custom released</option>
+                    <option value="Paicart warehouse">Paicart warehouse</option>
+                    <option value="Delivered">Delivered</option>
+                    <option value="Reject">Reject</option>
+                  </select>
+                </label>
+                {this.field("Order number (china website)", "orderNumber", { placeholder: "1688 / taobao order number" })}
+              </div>
+              <div className="urm-summary">
+                <div className="urm-sum-item">
+                  <span>Items</span>
+                  <b>{(order.items || []).length} product{(order.items || []).length === 1 ? "" : "s"} · {pcs} pcs</b>
+                </div>
+                <div className="urm-sum-item">
+                  <span>Order value (¥)</span>
+                  <b>¥{totalRmbAmount.toFixed(2)}</b>
+                </div>
+                <div className="urm-sum-item urm-sum-total">
+                  <span>Order total + courier</span>
+                  <b>{tk((parseFloat(this.state.orderTotal) || 0) + (parseFloat(this.state.localShipping) || 0))}</b>
+                </div>
+              </div>
+            </section>
+
+            {/* Purchase (China side) */}
+            <section className="urm-card">
+              <div className="urm-card-title"><span className="urm-dot" />Purchase (China)</div>
+              <div className="urm-grid">
+                {this.field("Purchase link (china website)", "purchaseLink", { span: 2, placeholder: "https://…" })}
+                {this.field("Purchasing RMB", "purchasingRmb", { placeholder: "¥ paid to the supplier" })}
+                {this.field("Exchange rate (৳ / ¥)", "exchangeRate", { placeholder: "Today's rate" })}
+                {this.field("Purchasing supplier info", "purchasingSupplier")}
+                {this.field("Supplier payment method", "purchasingSupplierPayment")}
+                {this.field("Supplier QR code (link)", "purchasingSupplierQr", { span: 2 })}
+              </div>
+              <div className="urm-summary">
+                <div className="urm-sum-item">
+                  <span>Purchasing RMB</span>
+                  <b>¥{(parseFloat(this.state.purchasingRmb) || 0).toFixed(2)}</b>
+                </div>
+                <div className="urm-sum-item">
+                  <span>× Exchange rate</span>
+                  <b>৳{parseFloat(this.state.exchangeRate) || 0}</b>
+                </div>
+                <div className="urm-sum-item urm-sum-total">
+                  <span>Buying cost</span>
+                  <b>{tk(Math.round((parseFloat(this.state.purchasingRmb) || 0) * (parseFloat(this.state.exchangeRate) || 0)))}</b>
+                </div>
+              </div>
+            </section>
+
+            {/* Shipping information */}
+            <section className="urm-card">
+              <div className="urm-card-title"><span className="urm-dot" />Shipping Information</div>
+              <div className="urm-grid">
+                {this.field("Shipping Mark", "shippingMark")}
+                {this.field("Cargo company", "cargoCompany")}
+                {this.field("Lot Number", "lotNo")}
+                {this.field("Carton Number", "ctnNo")}
+              </div>
+            </section>
+
+            {/* Tracking numbers & cartons */}
+            <section className="urm-card urm-span-full">
+              <div className="urm-card-title"><span className="urm-dot" />Tracking &amp; Cartons</div>
+              <CartonManager
+                trackingNumbers={this.state.trackingNumbers || []}
+                cartons={this.state.cartons || []}
+                onChange={({ trackingNumbers, cartons }) => this.setState({ trackingNumbers, cartons })}
+                onUseTotalWeight={(kg) => this.setState({ receivedWeight: kg })}
+                fetchKey={!this.props.toggleModal && order ? order.orderId || order.bookingId || "open" : null}
+              />
+            </section>
+
+            {/* Weight & charges */}
+            <section className="urm-card urm-span-full">
+              <div className="urm-card-title"><span className="urm-dot" />Weight &amp; Charges</div>
+              <div className="urm-grid urm-grid-4">
+                {this.field("Received (actual) weight, kg", "receivedWeight", { type: "number", placeholder: "Actual weight" })}
+                {this.field("Customs & shipping rate / kg", "customerRate", { type: "number" })}
+                {this.field("Packaging & other cost", "otherCost", { type: "number" })}
+                {this.field("Discount", "discount", { type: "number" })}
+                {this.field("Refund amount", "refund", { type: "number" })}
+                <label className="urm-field">
+                  <span className="urm-label">Total shipping charge (customer)</span>
+                  <input
+                    type="text"
+                    name="shippingChargeCustomer"
+                    className="urm-input urm-readonly"
+                    value={Number.isFinite(total) ? total : 0}
+                    readOnly
+                  />
+                  <span className="urm-hint">Calculated automatically</span>
+                </label>
+              </div>
+              <div className="urm-summary">
+                <div className="urm-sum-item">
+                  <span>Weight × rate</span>
+                  <b>{this.state.receivedWeight || 0} kg × ৳{this.state.customerRate || 0}</b>
+                </div>
+                <div className="urm-sum-item">
+                  <span>+ Other cost</span>
+                  <b>{tk(parseInt(this.state.otherCost) || 0)}</b>
+                </div>
+                <div className="urm-sum-item">
+                  <span>− Discount &amp; refund</span>
+                  <b>{tk((parseFloat(this.state.discount) || 0) + (parseFloat(this.state.refund) || 0))}</b>
+                </div>
+                <div className="urm-sum-item urm-sum-total">
+                  <span>Shipping charge</span>
+                  <b>{tk(total)}</b>
+                </div>
+                {margin !== null && (
+                  <div className={`urm-sum-item ${margin >= 0 ? "urm-pos-margin" : "urm-neg-margin"}`}>
+                    <span>Margin vs cargo</span>
+                    <b>{margin >= 0 ? "" : "−"}{tk(Math.abs(margin))}</b>
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {/* Addresses & delivery */}
+            <section className="urm-card urm-span-full">
+              <div className="urm-card-title"><span className="urm-dot" />Addresses, Delivery &amp; Refund</div>
+              <div className="urm-grid urm-grid-3">
+                {this.field("Abroad warehouse address", "abroadWarehouseAddress")}
+                {this.field("Bangladesh warehouse address", "bangladeshWarehouseAddress")}
+                {this.field("Delivered through (include reference)", "deliveredBy")}
+                {this.textarea("Refund note", "refundNote", "Enter refund note")}
+              </div>
+            </section>
+          </div>
+
+          {/* Footer */}
+          <div className="urm-foot">
+            <span className="urm-foot-total">
+              Shipping charge <b>{tk(total)}</b>
+            </span>
+            <div className="urm-foot-actions">
+              <button type="button" className="urm-btn urm-btn-ghost" onClick={this.closeModal}>
+                Cancel
+              </button>
+              <button type="submit" className="urm-btn urm-btn-primary">
+                Update order →
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
     );
   }
 }

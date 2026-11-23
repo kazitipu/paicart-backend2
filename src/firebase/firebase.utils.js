@@ -7,6 +7,7 @@ import { payableItemsOf } from "../constants/paymentSearch";
 import "firebase/auth";
 import "firebase/firestore";
 import "firebase/storage";
+import { buildStatusPatch, allocateProportionally } from "../constants/bulkActions";
 
 // paicart firebase connect
 const firebaseConfig = {
@@ -2763,6 +2764,236 @@ export const updateDeliveryRequestStatus = async (kind, id, status, handledBy) =
     "deliveryRequest.handledAt": now.getTime(),
     "deliveryRequest.handledDate": now.toLocaleDateString("en-GB"),
   });
+};
+
+/* ── Delivery section ─────────────────────────────────────────────────
+   Records with a delivery request (filtered to approved / staff-entered in
+   constants/deliveryPanel.js) plus every Pathao booking made from it. */
+const STATUS_FIELD = { order: "orderStatus", request: "orderStatus", ship: "status" };
+
+export const getDeliverySectionData = async () => {
+  const [requests, bookings] = await Promise.all([
+    getDeliveryRequests(),
+    firestore
+      .collection("pathaoDeliveries")
+      .get()
+      .then((snap) => {
+        const out = [];
+        snap.forEach((doc) => out.push({ ...doc.data(), id: doc.id }));
+        return out;
+      }),
+  ]);
+  return { requests, bookings };
+};
+
+/* Warehouse status of one parcel: "Paicart Warehouse" (active) or
+   "Delivered" (history). Delivered also moves the order itself to
+   Delivered; putting it back (Restore) returns it to Paicart warehouse. */
+export const setWarehouseDeliveryStatus = async (kind, record, status, handledBy) => {
+  const id = kind === "order" ? record.orderId : record.bookingId;
+  const now = new Date();
+  const delivered = status === "Delivered";
+  const field = STATUS_FIELD[kind];
+  const recordStatus = delivered ? "Delivered" : "Paicart warehouse";
+  await firestore.doc(`${DELIVERY_COLLECTIONS[kind]}/${id}`).update({
+    "deliveryRequest.warehouseStatus": status,
+    "deliveryRequest.status": delivered ? "delivered" : "arranged",
+    "deliveryRequest.handledBy": handledBy || "Paicart",
+    "deliveryRequest.handledAt": now.getTime(),
+    "deliveryRequest.handledDate": now.toLocaleDateString("en-GB"),
+    ...buildStatusPatch(record, recordStatus, field),
+  });
+};
+
+/* One Pathao consignment (doc id = consignment id). `items` are the
+   records it carries ({ kind, record, cartons }); each gets
+   pathaoBooking (what the customer app shows) and, once all its cartons are
+   booked, warehouseStatus "Pathao Booked" (moves to History). */
+export const savePathaoDelivery = async (delivery, items) => {
+  const batch = firestore.batch();
+  batch.set(firestore.doc(`pathaoDeliveries/${delivery.id}`), delivery);
+  items.forEach(({ kind, record, bookedCartons, allBooked }) => {
+    const id = kind === "order" ? record.orderId : record.bookingId;
+    batch.update(firestore.doc(`${DELIVERY_COLLECTIONS[kind]}/${id}`), {
+      pathaoBooking: {
+        consignmentId: delivery.id,
+        orderStatus: delivery.pathaoRawStatus || "Pending",
+        deliveryFee: delivery.deliveryCharge,
+        amountToCollect: delivery.total,
+        /* shown to the customer under My Home Delivery Request */
+        codCharge: delivery.codCharge,
+        dueAmount: delivery.due,
+        parcelType: delivery.parcelType,
+        totalWeight: delivery.totalWeight,
+        cartonCount: (delivery.cartons || []).length,
+        recipientPhone: (delivery.customer && delivery.customer.phone) || "",
+        bookedDate: new Date(delivery.createdAt).toLocaleDateString("en-GB"),
+        bookedTime: new Date(delivery.createdAt).toLocaleTimeString("en-GB"),
+        bookedAt: new Date(delivery.createdAt).toISOString(),
+      },
+      ...(bookedCartons && bookedCartons.length
+        ? { "deliveryRequest.pathaoCartons": firebase.firestore.FieldValue.arrayUnion(...bookedCartons) }
+        : {}),
+      ...(allBooked ? { "deliveryRequest.warehouseStatus": "Pathao Booked" } : {}),
+    });
+  });
+  await batch.commit();
+};
+
+export const updatePathaoDelivery = (id, patch) => firestore.doc(`pathaoDeliveries/${id}`).update(patch);
+
+/* Removes a booking from Paicart (not from Pathao). Its delivery request is
+   rejected, so the parcel goes back to the customer's To Receive (they can
+   choose a delivery option again) and leaves the Delivery section. */
+export const deletePathaoDelivery = async (delivery, handledBy) => {
+  const now = new Date();
+  const batch = firestore.batch();
+  batch.delete(firestore.doc(`pathaoDeliveries/${delivery.id}`));
+  (delivery.items || []).forEach(({ kind, id, cartons }) => {
+    batch.update(firestore.doc(`${DELIVERY_COLLECTIONS[kind]}/${id}`), {
+      pathaoBooking: firebase.firestore.FieldValue.delete(),
+      "deliveryRequest.warehouseStatus": "Paicart Warehouse",
+      "deliveryRequest.status": "cancelled",
+      "deliveryRequest.handledBy": handledBy || "Paicart",
+      "deliveryRequest.handledAt": now.getTime(),
+      "deliveryRequest.handledDate": now.toLocaleDateString("en-GB"),
+      ...(cartons && cartons.length
+        ? { "deliveryRequest.pathaoCartons": firebase.firestore.FieldValue.arrayRemove(...cartons) }
+        : {}),
+    });
+  });
+  await batch.commit();
+};
+
+/* Approves what Pathao paid for a delivered parcel: stamps the approval on
+   the booking and records the money as a payment on its order(s), split by
+   each order's due. */
+export const approvePathaoDeliveryPayment = async (delivery, amounts, approvedBy, records) => {
+  const now = new Date();
+  const dues = records.map((r) => Math.max(r.due, 0));
+  const shares = records.length === 1 ? [amounts.paid] : allocateProportionally(dues, amounts.paid);
+  const batch = firestore.batch();
+  batch.update(firestore.doc(`pathaoDeliveries/${delivery.id}`), {
+    approval: {
+      status: "approved",
+      paid: amounts.paid,
+      adjustment: amounts.adjustment,
+      newDelivery: amounts.newDelivery,
+      newCod: amounts.newCod,
+      collection: amounts.collection,
+      approvedBy: approvedBy || "Paicart",
+      approvedAt: now.getTime(),
+      approvedDate: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`,
+    },
+  });
+  records.forEach((r, i) => {
+    const amount = Math.round(shares[i] || 0);
+    if (amount <= 0) return;
+    batch.update(firestore.doc(`${DELIVERY_COLLECTIONS[r.kind]}/${r.id}`), {
+      payments: [
+        ...((r.record && r.record.payments) || []),
+        {
+          amount,
+          method: "Pathao COD",
+          paidBy: "Pathao",
+          receivedBy: "Pathao",
+          approvedBy: approvedBy || "Paicart",
+          pathaoId: delivery.id,
+          date: now.toLocaleDateString("en-GB"),
+        },
+      ],
+    });
+  });
+  await batch.commit();
+};
+
+/* ── Address book: move to Pathao locations ──────────────────────────
+   Addresses saved before the Pathao city / zone / area picker (no
+   `pathao.cityId` + `zoneId`) can't be booked with Pathao reliably. This
+   moves them out of every user's addressBook into `legacyAddressBook` (a
+   backup on the same user — nothing is destroyed), so customers must add a
+   new address with the Pathao picker. restoreLegacyAddresses() undoes it. */
+const isPathaoAddress = (a) => !!(a && a.pathao && a.pathao.cityId && a.pathao.zoneId);
+
+const readAllUsers = async () => {
+  const snap = await firestore.collection("users").get();
+  const users = [];
+  snap.forEach((doc) => users.push({ id: doc.id, data: doc.data() }));
+  return users;
+};
+
+export const previewAddressMigration = async () => {
+  const users = await readAllUsers();
+  let usersAffected = 0;
+  let addresses = 0;
+  let kept = 0;
+  users.forEach(({ data }) => {
+    const book = Array.isArray(data.addressBook) ? data.addressBook : [];
+    const old = book.filter((a) => !isPathaoAddress(a));
+    if (old.length) usersAffected += 1;
+    addresses += old.length;
+    kept += book.length - old.length;
+  });
+  return { users: users.length, usersAffected, addresses, kept };
+};
+
+export const migrateAddressBooksToPathao = async () => {
+  const users = await readAllUsers();
+  const now = Date.now();
+  let moved = 0;
+  let touched = 0;
+  let batch = firestore.batch();
+  let ops = 0;
+  for (const { id, data } of users) {
+    const book = Array.isArray(data.addressBook) ? data.addressBook : [];
+    const old = book.filter((a) => !isPathaoAddress(a));
+    if (!old.length) continue;
+    batch.update(firestore.doc(`users/${id}`), {
+      addressBook: book.filter(isPathaoAddress),
+      legacyAddressBook: [...(Array.isArray(data.legacyAddressBook) ? data.legacyAddressBook : []), ...old.map((a) => ({ ...a, movedAt: now }))],
+      addressBookMigratedAt: now,
+    });
+    moved += old.length;
+    touched += 1;
+    ops += 1;
+    if (ops >= 400) {
+      await batch.commit();
+      batch = firestore.batch();
+      ops = 0;
+    }
+  }
+  if (ops) await batch.commit();
+  return { users: touched, addresses: moved };
+};
+
+/* Puts every backed-up address back (Pathao ones stay; duplicates by id skipped) */
+export const restoreLegacyAddresses = async () => {
+  const users = await readAllUsers();
+  let restored = 0;
+  let touched = 0;
+  let batch = firestore.batch();
+  let ops = 0;
+  for (const { id, data } of users) {
+    const legacy = Array.isArray(data.legacyAddressBook) ? data.legacyAddressBook : [];
+    if (!legacy.length) continue;
+    const book = Array.isArray(data.addressBook) ? data.addressBook : [];
+    const ids = new Set(book.map((a) => a && a.id));
+    const back = legacy.filter((a) => !ids.has(a.id)).map(({ movedAt, ...a }) => a);
+    batch.update(firestore.doc(`users/${id}`), {
+      addressBook: [...book, ...back],
+      legacyAddressBook: firebase.firestore.FieldValue.delete(),
+    });
+    restored += back.length;
+    touched += 1;
+    ops += 1;
+    if (ops >= 400) {
+      await batch.commit();
+      batch = firestore.batch();
+      ops = 0;
+    }
+  }
+  if (ops) await batch.commit();
+  return { users: touched, addresses: restored };
 };
 
 /* Staff enter or change a record's delivery request (source "admin") */
@@ -6141,4 +6372,19 @@ export const updateParcelRecordFields = async (kind, id, patch) => {
   await ref.update(patch);
   const snap = await ref.get();
   return snap.data();
+};
+
+/* Admin: add a (Pathao-based) address to a customer's address book — used by
+   the delivery request dialog when the customer never gave one. Same shape
+   the website / app address forms write. */
+export const addAddressToUserBook = async (userId, address) => {
+  if (!userId || !address) throw new Error("Missing customer or address");
+  const ref = firestore.doc(`users/${userId}`);
+  const snap = await ref.get();
+  const data = snap.data() || {};
+  const book = Array.isArray(data.addressBook) ? data.addressBook : [];
+  const first = book.length === 0;
+  const entry = { ...address, defaultShipping: first || !!address.defaultShipping, defaultBilling: first || !!address.defaultBilling };
+  await ref.update({ addressBook: [...book, entry] });
+  return entry;
 };

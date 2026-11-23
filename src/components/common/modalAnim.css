@@ -1,0 +1,38 @@
+/* Open / close animation for the self-contained overlay dialogs.
+   Usage: backdrop gets .pc-modal-backdrop, the dialog box .pc-modal-dialog;
+   add .is-closing to the backdrop and remove the dialog after
+   PC_MODAL_CLOSE_MS (see modalAnim.js). */
+
+@keyframes pcBackdropIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pcBackdropOut { from { opacity: 1; } to { opacity: 0; } }
+@keyframes pcDialogIn {
+  from { opacity: 0; transform: translateY(14px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes pcDialogOut {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(10px) scale(0.97); }
+}
+
+.pc-modal-backdrop {
+  animation: pcBackdropIn 200ms ease-out both;
+}
+.pc-modal-backdrop .pc-modal-dialog {
+  animation: pcDialogIn 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform, opacity;
+}
+.pc-modal-backdrop.is-closing {
+  animation: pcBackdropOut 180ms ease-in both;
+}
+.pc-modal-backdrop.is-closing .pc-modal-dialog {
+  animation: pcDialogOut 180ms ease-in both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pc-modal-backdrop,
+  .pc-modal-backdrop .pc-modal-dialog,
+  .pc-modal-backdrop.is-closing,
+  .pc-modal-backdrop.is-closing .pc-modal-dialog {
+    animation-duration: 1ms;
+  }
+}

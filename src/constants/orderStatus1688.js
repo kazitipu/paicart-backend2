@@ -64,6 +64,15 @@ export const build1688OrderUpdate = (order, details) => {
   if (!actuals && !baseInfo) return null;
 
   const update = { orderId: order.orderId, ...(actuals || {}) };
+  /* 1688's own status, kept on the order so pages show it without calling
+     1688 again (the details page reads these) */
+  if (baseInfo && baseInfo.status) {
+    update.status1688 = String(baseInfo.status).trim().toLowerCase();
+    update.status1688CheckedAt = Date.now();
+    const seller = baseInfo.sellerContact || {};
+    const sellerName = seller.companyName || seller.shopName || "";
+    if (sellerName) update.seller1688 = sellerName;
+  }
 
   const mappedStatus = map1688StatusToOrderStatus(baseInfo && baseInfo.status);
   if (shouldApplyStatus(order, mappedStatus)) {

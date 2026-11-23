@@ -151,3 +151,4 @@ select.urm-input { padding-right: 8px; }
 .urm-overlay.is-closing .urm-modal { animation: urm-pop-out .2s ease-in both; }
 @keyframes urm-fade-out { from { opacity: 1 } to { opacity: 0 } }
 @keyframes urm-pop-out { from { opacity: 1; transform: none } to { opacity: 0; transform: translateY(14px) scale(.97) } }
+.urm-hint-warn { color: #b45309 !important; font-weight: 600; }

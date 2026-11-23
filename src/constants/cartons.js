@@ -65,16 +65,64 @@ export const cartonFromAlgParcel = (p, trackingNo) => ({
   source: "alg",
 });
 
+/* Tracking numbers typed as a stand-in ("123456", "0", "000000", "test")
+   match parcels of many different customers on ALG — looking them up would
+   pull other people's cartons onto this record. */
+const PLACEHOLDER_WORDS = ["test", "na", "n/a", "none", "null", "undefined", "nil", "tbd", "pending"];
+export const isPlaceholderTracking = (value) => {
+  const t = String(value == null ? "" : value).trim().toLowerCase();
+  if (t.length < 5) return true;
+  if (PLACEHOLDER_WORDS.includes(t)) return true;
+  if (/^(.)\1+$/.test(t)) return true; /* 00000, 11111, xxxxx */
+  /* runs of consecutive digits, up or down: 12345, 123456789, 987654 */
+  if (/^\d+$/.test(t)) {
+    const d = t.split("").map(Number);
+    const up = d.every((v, i) => i === 0 || v === (d[i - 1] + 1) % 10);
+    const down = d.every((v, i) => i === 0 || v === (d[i - 1] + 9) % 10);
+    if (up || down) return true;
+  }
+  return false;
+};
+
+/* One customer's tracking number covers a handful of cartons under one or two
+   shipping marks. An answer spanning many marks or lots is a shared /
+   placeholder number, not this parcel. */
+const MAX_MARKS = 3;
+const MAX_LOTS = 5;
+export const isAmbiguousAlgResult = (parcels) => {
+  const marks = new Set((parcels || []).map((p) => String(p.shippingMark || "").trim().toLowerCase()).filter(Boolean));
+  const lots = new Set((parcels || []).map((p) => String(p.lotNo || "").trim().toLowerCase()).filter(Boolean));
+  return marks.size > MAX_MARKS || lots.size > MAX_LOTS;
+};
+
 /* Looks every tracking number up on ALG, one request each. Resolves to
-   { [trackingNo]: { found, cartons, lot, error } } — never rejects, so one
-   unknown or failing number doesn't hide the others. */
+   { [trackingNo]: { found, cartons, lot, error, rejected } } — never
+   rejects, so one unknown or failing number doesn't hide the others.
+   `rejected` ("placeholder" | "ambiguous") means the number was not used:
+   its ALG answer would have been other customers' cartons. */
 export const fetchAlgCartons = async (trackingNos) => {
   const entries = await Promise.all(
     trackingNos.map(async (t) => {
+      if (isPlaceholderTracking(t)) {
+        return [t, { found: false, cartons: [], rejected: "placeholder", error: `"${t}" looks like a placeholder tracking number` }];
+      }
       try {
         const res = await Axios.get(ALG_URL + encodeURIComponent(t), { timeout: 20000 });
         const data = res && res.data;
         const parcels = (data && data.parcelsArray) || [];
+        if (isAmbiguousAlgResult(parcels)) {
+          const marks = new Set(parcels.map((p) => p.shippingMark).filter(Boolean)).size;
+          return [
+            t,
+            {
+              found: false,
+              cartons: [],
+              rejected: "ambiguous",
+              matched: parcels.length,
+              error: `"${t}" matches ${parcels.length} cartons of ${marks} different shipping marks on ALG — not this parcel`,
+            },
+          ];
+        }
         return [
           t,
           {
@@ -109,6 +157,10 @@ export const mergeCartons = (storedCartons, algByTracking, trackingNos) => {
       stored
         .filter((c) => c.source === "manual" && !algNos.has(String(c.cartonNo || "").trim().toLowerCase()))
         .forEach((c) => out.push(c));
+    } else if (alg && alg.rejected) {
+      /* a placeholder / shared number: drop anything ALG put here before
+         (other customers' cartons) and keep only hand-added ones */
+      out.push(...stored.filter((c) => c.source === "manual"));
     } else out.push(...stored);
   });
   /* manual cartons whose tracking number is blank are kept too */
@@ -194,4 +246,52 @@ export const legacyFieldsFromCartons = (cartons) => {
     ctnNo: uniq(list.map((c) => c.cartonNo)),
     lotNo: uniq(list.map((c) => c.lotNo)),
   };
+};
+
+/* ── Cleaning a record polluted by a placeholder / shared tracking no ──
+   An older sync copied every parcel's shipping mark and cargo rate from a
+   shared ALG answer onto the record itself — one booking ended up "owning"
+   dozens of other customers' marks and rates. One customer's parcel carries
+   one or two marks, so more than MAX_MARKS distinct marks means polluted. */
+const listValues = (value) => {
+  if (Array.isArray(value)) return value.map((v) => String(v == null ? "" : v).trim()).filter(Boolean);
+  const text = String(value == null ? "" : value).trim();
+  if (!text) return [];
+  if (text.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) return listValues(parsed);
+    } catch (e) {
+      /* not JSON */
+    }
+  }
+  return text.split(",").map((v) => v.trim()).filter(Boolean);
+};
+const distinctCount = (value) => new Set(listValues(value).map((v) => v.toLowerCase())).size;
+
+/* The customer's own mark — same rule as the customer app's getShippingMark */
+export const customerShippingMark = (user) => {
+  if (!user || !user.userId) return "";
+  const name = String(user.displayName || "")
+    .toLowerCase()
+    .replace(/(^|\s)\S/g, (c) => c.toUpperCase())
+    .trim();
+  return name ? `${user.userId}-${name}` : `${user.userId}`;
+};
+
+/* Fields to rewrite on a polluted record, given its cleaned carton list.
+   Empty object when nothing looks polluted. */
+export const cleanupPollutedFields = (record, cartons, user) => {
+  const patch = {};
+  if (!record) return patch;
+  if (distinctCount(record.shippingMark) > MAX_MARKS) {
+    patch.shippingMark = customerShippingMark(user);
+  }
+  const rates = listValues(record.cargoRate);
+  if (distinctCount(record.cargoRate) > MAX_MARKS || rates.length > Math.max((cartons || []).length, 1) * 2) {
+    const fresh = cargoFieldsFromCartons(cartons);
+    patch.cargoRate = fresh.cargoRate || [];
+    patch.shippingChargeCargo = fresh.shippingChargeCargo || [];
+  }
+  return patch;
 };

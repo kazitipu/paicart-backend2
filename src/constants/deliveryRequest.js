@@ -48,7 +48,16 @@ export const defaultShippingAddress = (user) => {
   const book = (user && Array.isArray(user.addressBook) && user.addressBook) || [];
   const a = book.find((x) => x && x.defaultShipping) || book[0] || null;
   return a
-    ? { name: a.name || "", mobileNo: a.mobileNo || "", address: a.address || "", thana: a.thana || "", district: a.district || "", division: a.division || "" }
+    ? {
+        name: a.name || "",
+        mobileNo: a.mobileNo || "",
+        address: a.address || "",
+        area: a.area || "",
+        thana: a.thana || "",
+        district: a.district || "",
+        division: a.division || "",
+        pathao: a.pathao || null,
+      }
     : null;
 };
 
@@ -59,8 +68,22 @@ export const deliveryAddressOf = (record, user) =>
   (record && record.deliveryAddress) ||
   defaultShippingAddress(user);
 
+/* Where deliveryAddressOf's answer came from — shown next to the address,
+   because only the first is fixed; "default" changes whenever the customer
+   edits their profile. */
+export const deliveryAddressSource = (record) => {
+  if (record && record.deliveryRequest && record.deliveryRequest.address) return "request";
+  if (record && record.deliveryAddress) return "order";
+  return "default";
+};
+export const ADDRESS_SOURCE_LABEL = {
+  request: "Saved with the request",
+  order: "Order's delivery address",
+  default: "Customer's current default address — not saved with this request",
+};
+
 export const formatAddress = (a) =>
-  a ? [a.name, a.mobileNo, a.address, a.thana, a.district, a.division].filter(Boolean).join(", ") : "";
+  a ? [a.name, a.mobileNo, a.address, a.area, a.thana, a.district, a.division].filter(Boolean).join(", ") : "";
 
 /* Request entered (or changed) by Paicart staff for one record */
 export const buildAdminDeliveryRequest = (kind, record, { method, status = "requested", note = "", enteredBy, address }) => {
