@@ -79,7 +79,7 @@ const notifyText = (group, status) => {
   if (status === "arranged") return { title: "Your delivery is being arranged", body: `We are arranging ${method} for ${refs}. We'll contact you with the details.` };
   if (status === "delivered") return { title: "Delivered", body: `${refs} handed over via ${method}. Thank you for shopping with Paicart.` };
   if (status === "cancelled")
-    return { title: "Delivery request cancelled", body: `Your ${method} request for ${refs} was cancelled. Please choose a delivery option again from your dashboard or contact Paicart.` };
+    return { title: "Delivery request rejected", body: `Your ${method} request for ${refs} was not accepted. Please choose a delivery option again from your dashboard or contact Paicart.` };
   return null;
 };
 
@@ -306,7 +306,7 @@ const DeliveryRequests = () => {
   }, [groups]);
 
   const setStatus = async (group, status) => {
-    if (status === "cancelled" && !window.confirm(`Cancel this ${group.methodLabel} request for ${group.items.map((it) => `#${it.id}`).join(", ")}?`)) return;
+    if (status === "cancelled" && !window.confirm(`Reject this ${group.methodLabel} request for ${group.items.map((it) => `#${it.id}`).join(", ")}? The customer will be able to request delivery again.`)) return;
     setBusyKey(group.key);
     const who = (admin && (admin.name || admin.email)) || "Paicart";
     try {
@@ -344,14 +344,14 @@ const DeliveryRequests = () => {
       return (
         <Fragment>
           <Button disabled={busy} onClick={() => setStatus(g, "arranged")} style={btn}>Approve · arranged</Button>
-          <Button variant="danger" disabled={busy} onClick={() => setStatus(g, "cancelled")} style={btn}>Cancel</Button>
+          <Button variant="danger" disabled={busy} onClick={() => setStatus(g, "cancelled")} style={btn}>Reject</Button>
         </Fragment>
       );
     if (g.status === "arranged")
       return (
         <Fragment>
           <Button disabled={busy} onClick={() => setStatus(g, "delivered")} style={btn}>Mark delivered</Button>
-          <Button variant="danger" disabled={busy} onClick={() => setStatus(g, "cancelled")} style={btn}>Cancel</Button>
+          <Button variant="danger" disabled={busy} onClick={() => setStatus(g, "cancelled")} style={btn}>Reject</Button>
         </Fragment>
       );
     if (g.status === "cancelled")

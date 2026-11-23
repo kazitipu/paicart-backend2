@@ -29,7 +29,8 @@ export const DELIVERY_STATUSES = {
   requested: { label: "Requested", tone: "blue" },
   arranged: { label: "Arranged", tone: "orange" },
   delivered: { label: "Delivered", tone: "green" },
-  cancelled: { label: "Cancelled", tone: "gray" },
+  /* stored "cancelled"; the customer can request again only after this */
+  cancelled: { label: "Rejected", tone: "red" },
 };
 
 export const KIND_OF_COLLECTION = { ordersApi: "order", bookingRequest: "request", shipForMe: "ship" };
