@@ -3,6 +3,7 @@ import ReactToPrint from "react-to-print";
 import { Printer } from "react-feather";
 import PaicartLogo from "./paicart_logo.png";
 import { getSingleUser } from "../../firebase/firebase.utils";
+import { addressFullLine } from "../../constants/deliveryRequest";
 
 /* Print button for the 1688 order / product request detail popups.
  *
@@ -66,7 +67,7 @@ const shippingOf = (record, user) => {
     name: (a && a.name) || (user && user.displayName) || record.displayName || "—",
     mobile: (a && a.mobileNo) || (user && user.mobileNo) || "—",
     address: a
-      ? [a.address, a.thana, a.district, a.division].filter(Boolean).join(", ")
+      ? addressFullLine(a)
       : "—",
   };
 };

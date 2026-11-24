@@ -23,6 +23,7 @@ import {
   getAllOrdersByCartonNo2,
 } from "../../../firebase/firebase.utils";
 import { toast, ToastContainer } from "react-toastify";
+import { addressAreaLine } from "../../../constants/deliveryRequest";
 // live environment
 const base_url = "https://openapi.redx.com.bd/v1.0.0-beta";
 const access_token =
@@ -601,18 +602,10 @@ export class PackingList extends Component {
                                           order.deliveryAddress.mobileNo}
                                       </div>
                                       <div style={{ marginBottom: 20 }}>
-                                        Delivery Address:
-                                        {order.deliveryAddress &&
-                                          order.deliveryAddress.address}
-                                        ,<br />
-                                        {order.deliveryAddress &&
-                                          order.deliveryAddress.thana}
-                                        ,
-                                        {order.deliveryAddress &&
-                                          order.deliveryAddress.district}
-                                        ,<br />
-                                        {order.deliveryAddress &&
-                                          order.deliveryAddress.division}
+                                        Delivery Address:{" "}
+                                        {order.deliveryAddress && order.deliveryAddress.address}
+                                        <br />
+                                        {addressAreaLine(order.deliveryAddress)}
                                       </div>
                                     </div>
                                   </div>

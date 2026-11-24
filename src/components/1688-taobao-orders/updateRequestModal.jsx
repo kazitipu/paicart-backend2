@@ -358,6 +358,8 @@ class UpdateRequestModal extends Component {
           </div>
 
           <div className="urm-body">
+            {/* left: order & status + shipping, right: purchase — two even columns */}
+            <div className="urm-col">
             {/* Order & status */}
             <section className="urm-card">
               <div className="urm-card-title"><span className="urm-dot" />Order &amp; Status</div>
@@ -368,6 +370,7 @@ class UpdateRequestModal extends Component {
                   <span className="urm-label">Status *</span>
                   <select name="orderStatus" className="urm-input" onChange={this.handleChange} value={this.state.orderStatus} required>
                     <option value="">Change status</option>
+                    <option value="pending">Pending (not purchased yet)</option>
                     <option value="Purchased">Purchased</option>
                     <option value="Received in Warehouse">Received in Warehouse</option>
                     <option value="Ready for fly">Ready for fly</option>
@@ -396,6 +399,19 @@ class UpdateRequestModal extends Component {
               </div>
             </section>
 
+            {/* Shipping information */}
+            <section className="urm-card">
+              <div className="urm-card-title"><span className="urm-dot" />Shipping Information</div>
+              <div className="urm-grid">
+                {this.field("Shipping Mark", "shippingMark")}
+                {this.field("Cargo company", "cargoCompany")}
+                {this.field("Lot Number", "lotNo")}
+                {this.field("Carton Number", "ctnNo")}
+              </div>
+            </section>
+
+            </div>
+            <div className="urm-col">
             {/* Purchase (China side) */}
             <section className="urm-card">
               <div className="urm-card-title"><span className="urm-dot" />Purchase (China)</div>
@@ -423,16 +439,7 @@ class UpdateRequestModal extends Component {
               </div>
             </section>
 
-            {/* Shipping information */}
-            <section className="urm-card">
-              <div className="urm-card-title"><span className="urm-dot" />Shipping Information</div>
-              <div className="urm-grid">
-                {this.field("Shipping Mark", "shippingMark")}
-                {this.field("Cargo company", "cargoCompany")}
-                {this.field("Lot Number", "lotNo")}
-                {this.field("Carton Number", "ctnNo")}
-              </div>
-            </section>
+            </div>
 
             {/* Tracking numbers & cartons */}
             <section className="urm-card urm-span-full">

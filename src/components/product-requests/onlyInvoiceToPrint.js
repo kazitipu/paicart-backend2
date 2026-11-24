@@ -6,6 +6,7 @@ import Alg from "./alg.png";
 import Paid from "./paid.png";
 import { withRouter } from "react-router-dom";
 import { getSingleUser } from "../../firebase/firebase.utils";
+import { addressAreaLine } from "../../constants/deliveryRequest";
 
 export class OnlyInvoieToPrint extends Component {
   state = {
@@ -127,13 +128,9 @@ export class OnlyInvoieToPrint extends Component {
               <span>{(addressBook && addressBook.address) || ""}</span>
             </div>
 
-            {addressBook && addressBook.thana && (
+            {addressAreaLine(addressBook) && (
               <div>
-                <span>
-                  {(addressBook && addressBook.thana) || ""},
-                  {(addressBook && addressBook.district) || ""},
-                  {(addressBook && addressBook.division) || ""}
-                </span>
+                <span>{addressAreaLine(addressBook)}</span>
               </div>
             )}
             <div>

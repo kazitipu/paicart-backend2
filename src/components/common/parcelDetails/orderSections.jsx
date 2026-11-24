@@ -6,6 +6,7 @@ import { DELIVERY_STATUSES, deliveryMethod } from "../../../constants/deliveryRe
 import { cartonTotals, trackingNumbersOf } from "../../../constants/cartons";
 import { getShipmentMode } from "../../../constants/shipment";
 import { has1688OrderNo, refresh1688Trace, traceNeedsRefresh } from "./store1688";
+import { addressFullLine } from "../../../constants/deliveryRequest";
 
 const TRACE_TRIED = new Set();
 
@@ -157,7 +158,7 @@ export const DeliveryRequestBar = ({ kind, record, onChanged }) => {
                 {req.source === "admin" ? `Entered by ${req.enteredBy || "admin"}` : "Requested by customer"}
                 {req.requestedDate ? ` · ${req.requestedDate}` : ""}
                 {req.address && req.method !== "office_pickup"
-                  ? ` · ${[req.address.name, req.address.address, req.address.area, req.address.thana, req.address.district].filter(has).join(", ")}`
+                  ? ` · ${[req.address.name, addressFullLine(req.address)].filter(has).join(", ")}`
                   : ""}
               </small>
             </>

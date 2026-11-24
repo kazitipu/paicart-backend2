@@ -59,6 +59,23 @@ const STATUS_LABELS = {
   rejected: "Rejected",
 };
 
+/* Which orders belong on each tab — same rules as the tab's Firestore query
+   (getAllOrdersApi). Applied to the rows on screen so an order moved by the
+   ALG / 1688 sync, an update dialog or a pick leaves its tab at once instead
+   of after a reload. Search looks across every status. */
+const ORDER_TAB_MATCH = {
+  new: (o) => o.orderStatus === "pending",
+  "picked-orders": (o) => o.agentStatus === "Picked" && o.orderStatus === "pending",
+  purchased: (o) => o.orderStatus === "Purchased",
+  "received-in-warehouse": (o) => o.orderStatus === "Received in Warehouse",
+  "ready-for-fly": (o) => o.orderStatus === "Ready for fly",
+  "bangladesh-customs": (o) => o.orderStatus === "Bangladesh customs",
+  "custom-released": (o) => o.orderStatus === "Bangladesh warehouse",
+  "Paicart-warehouse": (o) => o.orderStatus === "Paicart warehouse",
+  delivered: (o) => o.orderStatus === "Delivered",
+  rejected: (o) => o.orderStatus === "Reject",
+};
+
 export class New extends Component {
   constructor(props) {
     super(props);
@@ -588,7 +605,7 @@ export class New extends Component {
       ? (this.state.searchPool || orders).filter((order) =>
           this.matchesSearch(order, this.state.searchFor),
         )
-      : orders;
+      : orders.filter(ORDER_TAB_MATCH[this.props.match.params.orderStatus] || (() => true));
     // Per-shop counts over the whole tab, so a badge says how many orders
     // that supplier has here regardless of the filters below.
     const shopGroups = buildShopGroups(orders);

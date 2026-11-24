@@ -11,6 +11,7 @@
  * components, no hooks — the admin app runs React 16.8.
  * ───────────────────────────────────────────────────────────────────────── */
 import React from 'react';
+import { addressAreaLine } from "../../constants/deliveryRequest";
 
 export const INVOICE_COLORS = {
   brand: '#FF6A00',
@@ -429,7 +430,7 @@ export const INVOICE_TERMS = [
 /* Billed-To block from a delivery address or a user profile */
 export const billToFromAddress = (a) => (a ? {
   name: a.name,
-  lines: [a.address, [a.thana, a.district, a.division].filter(Boolean).join(', ')],
+  lines: [a.address, addressAreaLine(a)],
   phone: a.mobileNo,
 } : null);
 
@@ -439,7 +440,7 @@ export const billToFromUser = (u) => {
   const a = book.find((x) => x && x.defaultShipping) || book[0];
   return {
     name: (a && a.name) || u.displayName,
-    lines: a ? [a.address, [a.thana, a.district, a.division].filter(Boolean).join(', ')] : [],
+    lines: a ? [a.address, addressAreaLine(a)] : [],
     phone: (a && a.mobileNo) || u.mobileNo,
     email: u.email,
   };

@@ -1,4 +1,3 @@
-import { auth } from "../firebase/firebase.utils";
 /* Browser side of the Pathao Courier integration.
  *
  * Every call goes to /pathao-api/... on our own dev server (src/setupProxy.js),
@@ -159,28 +158,38 @@ const listOf = (prefix) => (data) => {
 
 export const getPathaoStores = () =>
   unwrap(axios.get(`${API}/stores`)).then(listOf("store"));
-/* Location lists (address picker): the deployed Cloud Function the website
-   and app use (works on the hosted admin; needs the admin to be signed in),
-   falling back to the local /pathao-api dev proxy. Kept for the session. */
-const FUNCTIONS_BASE = "https://asia-south1-paicart.cloudfunctions.net";
+/* Location lists (address picker): the website's Next.js API
+   (paicart.com/api/pathao — it holds the Pathao keys; works from the hosted
+   admin), falling back to the local /pathao-api dev proxy. Kept for the
+   session. */
+const PATHAO_API_BASE = "https://paicart.com/api/pathao";
 const locationCache = new Map();
-const fromFunction = async (level, parentId) => {
-  const user = auth.currentUser;
-  if (!user) throw new Error("Not signed in");
-  const token = await user.getIdToken();
-  const res = await fetch(`${FUNCTIONS_BASE}/pathaoLocations?level=${level}${parentId ? `&parentId=${parentId}` : ""}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+const fromWebsite = async (level, parentId) => {
+  const res = await fetch(`${PATHAO_API_BASE}/locations?level=${level}${parentId ? `&parentId=${parentId}` : ""}`);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Pathao locations failed (${res.status})`);
   /* same shape as the proxy lists below; areas carry homeDelivery */
   return (data.list || []).map((x) => ({ ...x, home_delivery_available: x.homeDelivery !== false }));
 };
+/* Local dev (npm start) has the /pathao-api proxy — use it directly; asking
+   paicart.com first threw "Failed to fetch" until the website is deployed,
+   and the dev error overlay decoding each failure froze the page. On the
+   hosted admin, use the website API; after one failure, stop trying it for
+   the session and go straight to the proxy. */
+const isLocalDev = () => /^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname);
+let websiteDown = false;
+const viaWebsite = (level, parentId) => {
+  if (isLocalDev() || websiteDown) return Promise.reject(new Error("skip website"));
+  return fromWebsite(level, parentId).catch((e) => {
+    websiteDown = true;
+    throw e;
+  });
+};
 const locations = (key, level, parentId, proxyCall) => {
   if (!locationCache.has(key)) {
     locationCache.set(
       key,
-      fromFunction(level, parentId)
+      viaWebsite(level, parentId)
         .catch(() => proxyCall())
         .catch((e) => {
           locationCache.delete(key);
@@ -240,3 +249,31 @@ export const getPathaoPricePlan = (payload) =>
  *      updated_at, invoice_id } */
 export const getPathaoOrderInfo = (consignmentId) =>
   unwrap(axios.get(`${API}/orders/${encodeURIComponent(consignmentId)}/info`));
+
+
+/* Invoices (merchant panel, via setupProxy.js) ----------------------------- */
+
+/* → { data: [{ order_invoice_id, invoice_created_at, status, collected_amount,
+       delivery_fee, cod_fee, total_fee, receivable_amount, … }], current_page,
+       per_page, total, last_page } */
+export const getPathaoInvoices = ({ page = 1, limit = 10 } = {}) =>
+  unwrap(axios.get("/pathao-api/merchant/invoices", { params: { page, limit } })).then((d) => d || {});
+
+/* parcels in one invoice → [{ consignment_id, merchant_order_id, collected_amount,
+   delivery_fee, cash_on_delivery_fee, final_fee, payout, … }] */
+const breakdownCache = {};
+export const getPathaoInvoiceBreakdown = (invoiceId) => {
+  if (!breakdownCache[invoiceId]) {
+    breakdownCache[invoiceId] = unwrap(axios.get(`/pathao-api/merchant/invoices/${encodeURIComponent(invoiceId)}/breakdown`))
+      .then((d) => (Array.isArray(d) ? d : (d && d.data) || []))
+      .catch((e) => {
+        delete breakdownCache[invoiceId];
+        throw e;
+      });
+  }
+  return breakdownCache[invoiceId];
+};
+
+/* lifetime earning, last invoice, payment in process / invoiced not paid … */
+export const getPathaoInvoiceSummary = () =>
+  unwrap(axios.get("/pathao-api/merchant/invoice-summary")).then((d) => (d && d.data) || d || {});

@@ -3,6 +3,7 @@ import ReactToPrint from "react-to-print";
 import logo from "../../../assets/images/dashboard/14.png";
 import Barcode from "react-barcode";
 import "./sticker.css";
+import { addressFullLine } from "../../../constants/deliveryRequest";
 const StickerContent = React.forwardRef(({ order, weight, user }, ref) => {
   let deliveryAddress = null;
   if (order && order.deliveryAddress) {
@@ -51,10 +52,7 @@ const StickerContent = React.forwardRef(({ order, weight, user }, ref) => {
           <div>Name: {deliveryAddress && deliveryAddress.name}</div>
           <div>Mobile No: {deliveryAddress && deliveryAddress.mobileNo}</div>
           <div>
-            Delivery Address:{deliveryAddress && deliveryAddress.address},
-            {deliveryAddress && deliveryAddress.thana},
-            {deliveryAddress && deliveryAddress.district},{" "}
-            {deliveryAddress && deliveryAddress.division}
+            Delivery Address: {addressFullLine(deliveryAddress)}
           </div>
         </div>
         <div className="section-container">

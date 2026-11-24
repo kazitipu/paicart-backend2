@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import SearchableSelect from "../common/searchableSelect.jsx";
 import { X, Box, Truck, Send, AlertTriangle } from "react-feather";
 import {
   createPathaoOrder,
@@ -13,6 +14,7 @@ import {
 } from "../../constants/pathao";
 import { HEAVY_KG, calculatePathaoRates, isoDate, money } from "../../constants/deliveryPanel";
 import { savePathaoDelivery } from "../../firebase/firebase.utils";
+import { addressFullLine } from "../../constants/deliveryRequest";
 
 /* "Pathao Dispatch & Carton Breakdown" (one order, from Pathao Book) and
    "Master Package - Multiple Bookings" (several orders, from the floating
@@ -52,7 +54,7 @@ const PathaoDispatchDrawer = ({ rows, master, admin, onClose, onBooked }) => {
   const [customer, setCustomer] = useState({
     name: first.customer,
     phone: first.mobile,
-    address: first.address ? [first.address.address, first.address.thana, first.address.district].filter(Boolean).join(", ") : "",
+    address: first.address ? addressFullLine(first.address) : "",
   });
   const [delivery, setDelivery] = useState(0);
   const [cod, setCod] = useState(0);
@@ -431,18 +433,32 @@ const PathaoDispatchDrawer = ({ rows, master, admin, onClose, onBooked }) => {
                   <option value="">Pickup store…</option>
                   {loc.stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
-                <select className="dl-field" value={loc.cityId} onChange={(e) => setLoc({ ...loc, cityId: e.target.value, zoneId: "", areaId: "", zones: [], areas: [] })} aria-label="City">
-                  <option value="">City…</option>
-                  {loc.cities.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-                <select className="dl-field" value={loc.zoneId} onChange={(e) => setLoc({ ...loc, zoneId: e.target.value, areaId: "", areas: [] })} disabled={!loc.cityId} aria-label="Zone">
-                  <option value="">Zone…</option>
-                  {loc.zones.map((z) => <option key={z.id} value={z.id}>{z.name}</option>)}
-                </select>
-                <select className="dl-field" value={loc.areaId} onChange={(e) => setLoc({ ...loc, areaId: e.target.value })} disabled={!loc.zoneId} aria-label="Area">
-                  <option value="">Area (optional)…</option>
-                  {loc.areas.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-                </select>
+                <SearchableSelect
+                  inputClassName="dl-field"
+                  ariaLabel="City"
+                  placeholder="Search city…"
+                  options={loc.cities}
+                  value={loc.cityId}
+                  onChange={(id) => setLoc((l) => ({ ...l, cityId: id, zoneId: "", areaId: "", zones: [], areas: [] }))}
+                />
+                <SearchableSelect
+                  inputClassName="dl-field"
+                  ariaLabel="Zone"
+                  placeholder={loc.cityId ? "Search zone…" : "Zone…"}
+                  options={loc.zones}
+                  value={loc.zoneId}
+                  disabled={!loc.cityId}
+                  onChange={(id) => setLoc((l) => ({ ...l, zoneId: id, areaId: "", areas: [] }))}
+                />
+                <SearchableSelect
+                  inputClassName="dl-field"
+                  ariaLabel="Area"
+                  placeholder={loc.zoneId ? "Search area (optional)…" : "Area (optional)…"}
+                  options={loc.areas}
+                  value={loc.areaId}
+                  disabled={!loc.zoneId}
+                  onChange={(id) => setLoc((l) => ({ ...l, areaId: id }))}
+                />
               </div>
             )}
           </div>

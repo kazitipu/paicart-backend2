@@ -179,10 +179,72 @@ const fraudCheck = async (req, res) => {
   }
 };
 
+/* Invoices (Pathao Payment tab) via the merchant-panel API — the same
+ * endpoints merchant.pathao.com/courier/invoices uses, read-only:
+ *   GET /pathao-api/merchant/invoices?page=&limit=   invoice list
+ *   GET /pathao-api/merchant/invoices/:id/breakdown  parcels in an invoice
+ *   GET /pathao-api/merchant/invoice-summary         lifetime / pending totals
+ * Unofficial like the fraud check; logs in with PATHAO_USERNAME/PASSWORD. */
+const MERCHANT_ROUTES = [
+  { re: /^\/merchant\/invoices$/, to: () => "/monetary/invoices/receivable", query: ["page", "limit"] },
+  { re: /^\/merchant\/invoices\/([A-Za-z0-9_-]+)\/breakdown$/, to: (m) => `/monetary/invoices/${m[1]}/breakdown`, query: ["page", "limit"] },
+  { re: /^\/merchant\/invoice-summary$/, to: () => "/monetary/merchant/invoice-summary", query: [] },
+];
+
+const merchantPanelGet = async (req, res) => {
+  if (!process.env.PATHAO_USERNAME || !process.env.PATHAO_PASSWORD) {
+    return send(res, 500, {
+      code: "PATHAO_NOT_CONFIGURED",
+      message: "Add PATHAO_USERNAME and PATHAO_PASSWORD to .env.local and restart npm start.",
+    });
+  }
+  const [pathOnly, qs] = req.url.split("?");
+  let target = null;
+  let allowed = [];
+  for (const r of MERCHANT_ROUTES) {
+    const m = pathOnly.match(r.re);
+    if (m) {
+      target = r.to(m);
+      allowed = r.query;
+      break;
+    }
+  }
+  if (!target) return send(res, 404, { message: `Not allowed: ${pathOnly}` });
+  const incoming = new URLSearchParams(qs || "");
+  const params = {};
+  allowed.forEach((k) => {
+    const v = incoming.get(k);
+    if (v !== null && /^\d{1,4}$/.test(v)) params[k] = v;
+  });
+  const call = async (forceRefresh) =>
+    axios.get(`${MERCHANT_PANEL}${target}`, {
+      params,
+      headers: { Accept: "application/json", Authorization: `Bearer ${await getPanelToken(forceRefresh)}` },
+      timeout: 45000,
+      validateStatus: () => true,
+    });
+  try {
+    let response = await call(false);
+    if (response.status === 401 || (response.data && response.data.message === "Unauthorized!")) {
+      panelToken = null;
+      response = await call(true);
+    }
+    send(res, response.status, response.data);
+  } catch (err) {
+    send(res, (err.response && err.response.status) || 502, {
+      code: "PATHAO_UNREACHABLE",
+      message: (err.response && err.response.data && err.response.data.message) || err.message || "Could not reach Pathao",
+    });
+  }
+};
+
 module.exports = function setupProxy(app) {
   app.use("/pathao-api", async (req, res, next) => {
     if (req.method === "POST" && req.url.split("?")[0] === "/fraud-check") {
       return fraudCheck(req, res);
+    }
+    if (req.method === "GET" && req.url.startsWith("/merchant/")) {
+      return merchantPanelGet(req, res);
     }
     return next();
   });

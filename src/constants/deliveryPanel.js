@@ -11,7 +11,7 @@
  *     Pathao has collected, until staff approve what Pathao paid.
  */
 import { getOrderBucket, getRequestBucket, getShipBucket } from "./clientDue";
-import { deliveryDue, recordIdOf } from "./deliveryRequest";
+import { addressFullLine, deliveryDue, recordIdOf } from "./deliveryRequest";
 import { trackingNumbersOf } from "./cartons";
 
 /* ── Labels ───────────────────────────────────────────────────────────── */
@@ -161,8 +161,7 @@ const addressOf = (r, user) => {
   const book = (user && user.addressBook) || [];
   return dr.address || r.deliveryAddress || book.find((a) => a && a.defaultShipping) || book[0] || null;
 };
-export const addressLine = (a) =>
-  a ? [a.address, a.thana, a.district].filter(Boolean).join(", ") : "";
+export const addressLine = (a) => addressFullLine(a);
 
 export const buildWarehouseRow = (kind, record, user) => {
   const id = recordIdOf(kind, record);

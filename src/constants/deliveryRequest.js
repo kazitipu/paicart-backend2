@@ -82,8 +82,20 @@ export const ADDRESS_SOURCE_LABEL = {
   default: "Customer's current default address — not saved with this request",
 };
 
+/* "Area, Zone/Thana, City[, Division]" — Pathao area first when the zone
+   has one (some zones don't), empty / repeated parts skipped */
+export const addressAreaLine = (a) =>
+  a
+    ? [a.area && typeof a.area === "string" ? a.area : "", a.thana, a.district, a.division]
+        .filter(Boolean)
+        .filter((v, i, arr) => arr.indexOf(v) === i)
+        .join(", ")
+    : "";
+/* street + area line */
+export const addressFullLine = (a) => (a ? [a.address, addressAreaLine(a)].filter(Boolean).join(", ") : "");
+
 export const formatAddress = (a) =>
-  a ? [a.name, a.mobileNo, a.address, a.area, a.thana, a.district, a.division].filter(Boolean).join(", ") : "";
+  a ? [a.name, a.mobileNo, addressFullLine(a)].filter(Boolean).join(", ") : "";
 
 /* Request entered (or changed) by Paicart staff for one record */
 export const buildAdminDeliveryRequest = (kind, record, { method, status = "requested", note = "", enteredBy, address }) => {

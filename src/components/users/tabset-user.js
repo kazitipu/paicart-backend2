@@ -3,6 +3,7 @@ import { Tabs, TabList, TabPanel, Tab } from "react-tabs";
 
 import { connect } from "react-redux";
 import { coveredIds } from "../../constants/paymentSearch";
+import { addressAreaLine } from "../../constants/deliveryRequest";
 
 export class Tabset_user extends Component {
   toDateTime = (secs) => {
@@ -145,10 +146,7 @@ export class Tabset_user extends Component {
                     <div>{shippingAddress.name}</div>
                     <div>{shippingAddress.mobileNo}</div>
                     <div>{shippingAddress.address}</div>
-                    <div>
-                      {shippingAddress.thana},{shippingAddress.district}
-                    </div>
-                    <div>{shippingAddress.division}</div>
+                    <div>{addressAreaLine(shippingAddress)}</div>
                   </div>
                 )}
               </div>

@@ -47,6 +47,20 @@ const STATUS_LABELS = {
   rejected: "Rejected",
 };
 
+/* the stored status each tab lists (same as componentDidMount loads) */
+const REQUEST_TAB_STATUS = {
+  new: "Pending",
+  "rates-given": "Rates Provided",
+  purchased: "Purchased",
+  "received-in-warehouse": "Received in Warehouse",
+  "ready-for-fly": "Ready for fly",
+  "bangladesh-customs": "Bangladesh customs",
+  "custom-released": "Bangladesh warehouse",
+  "Paicart-warehouse": "Paicart warehouse",
+  delivered: "Delivered",
+  rejected: "Reject",
+};
+
 export class New extends Component {
   constructor(props) {
     super(props);
@@ -435,7 +449,12 @@ export class New extends Component {
       ? (this.state.searchPool || orders).filter((order) =>
           this.matchesSearch(order, this.state.searchFor),
         )
-      : orders;
+      : orders.filter((o) => {
+          /* a request moved by the ALG sync or the update dialog leaves its
+             tab at once (search looks across every status) */
+          const want = REQUEST_TAB_STATUS[this.props.match.params.orderStatus];
+          return !want || (o.orderStatus || "Pending") === want;
+        });
     if (this.state.paymentFilter) {
       displayedOrders = displayedOrders.filter(
         (order) => getPaymentState(order) === this.state.paymentFilter,

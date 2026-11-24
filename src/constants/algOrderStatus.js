@@ -51,7 +51,10 @@ export const STATUS_SCORE = {
 export const ALG_KINDS = {
   order: {
     collection: 'ordersApi', field: 'orderStatus',
-    from: ['Purchased', 'Received in Warehouse', 'Ready for fly', 'Bangladesh customs'],
+    /* 'pending' only counts once the order is Picked (ordered on 1688) — see
+       isAlgEligible: a parcel ALG has received proves it was bought, even if
+       nobody marked the order Purchased */
+    from: ['pending', 'Purchased', 'Received in Warehouse', 'Ready for fly', 'Bangladesh customs'],
   },
   request: {
     collection: 'bookingRequest', field: 'orderStatus',
@@ -157,10 +160,23 @@ export const algStageOf = (alg) => {
  *   order        the ordersApi document
  *   algByNo      { [trackingNo]: raw ALG response ({ lotObj, parcelsArray }) or null }
  * Forward-only; the order moves only as far as its slowest tracked parcel. */
+/* Whether ALG tracking may move this record. Website orders still 'pending'
+   qualify only when Picked with a 1688 order number (bought on 1688, just
+   never marked Purchased). */
+export const isAlgEligible = (record, kind = 'order') => {
+  const cfg = ALG_KINDS[kind] || ALG_KINDS.order;
+  const current = record && (record[cfg.field] || (kind === 'ship' ? 'Pending' : ''));
+  if (!record || !cfg.from.includes(current)) return false;
+  if (kind === 'order' && current === 'pending') {
+    return record.agentStatus === 'Picked' && !!String(record.orderNumber || '').trim();
+  }
+  return true;
+};
+
 export const algStatusPatch = (record, algByNo, kind = 'order', now = new Date()) => {
   const cfg = ALG_KINDS[kind] || ALG_KINDS.order;
   const current = record && (record[cfg.field] || (kind === 'ship' ? 'Pending' : ''));
-  if (!record || !cfg.from.includes(current)) return null;
+  if (!isAlgEligible(record, kind)) return null;
   const order = record;
   const found = Object.values(algByNo || {}).filter((a) => algStageOf(a) >= 0);
   if (!found.length) return null;
@@ -174,6 +190,11 @@ export const algStatusPatch = (record, algByNo, kind = 'order', now = new Date()
     statusSource: 'alg',
     statusSyncedAt: now.getTime(),
   };
+  /* a Picked order that skipped 'Purchased' gets that stage stamped too */
+  if (kind === 'order' && current === 'pending' && !order.PurchasedDate) {
+    patch.PurchasedDate = order.pickedDate || now.toLocaleDateString('en-GB');
+    patch.PurchasedTime = order.pickedTime || now.toLocaleTimeString('en-GB');
+  }
   /* stamp every stage reached (incl. ones skipped over) that has no date yet,
      with ALG's own date for it when it has one */
   const dates = stageDates(found[0].lotObj || found[0].lot, found[0].parcelsArray || found[0].parcels);

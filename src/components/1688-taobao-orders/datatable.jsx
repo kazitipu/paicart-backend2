@@ -50,7 +50,8 @@ import { statusDisplay } from "../../constants/statusDisplay";
 import OrderPrintSlip from "../common/orderPrintSlip.jsx";
 import { shopKeyOf } from "../../constants/shopGroups";
 import { joinList, withUnit } from "../../constants/displayList";
-import FraudCheckPanel from "./fraudCheckPanel.jsx";
+import PickOrderModal from "./pickOrderModal.jsx";
+import TrackingModal1688 from "./trackingModal1688.jsx";
 import {
   BulkActionBar,
   BulkPaymentModal,
@@ -66,6 +67,7 @@ import PaymentModal, {
 } from "../common/paymentModal.jsx";
 import { getOrderDue } from "../../constants/paymentMath";
 import { notifyCustomer } from "../common/notifyCustomer";
+import { addressAreaLine } from "../../constants/deliveryRequest";
 const PAYMENT_STATE_TONES = {
   Paid: "green",
   "Partially Paid": "orange",
@@ -594,6 +596,56 @@ export class Datatable extends Component {
     );
   };
 
+  /* Pick: create the 1688 order, then mark the website order Picked.
+     Throws { code, message } so the modal can show what went wrong. */
+  pickOrder = async ({ carton, address, totalRmb }) => {
+    const productObj = this.state.productObj;
+    const admin = this.props.currentAdmin;
+    if (!productObj) throw { message: "No order selected." };
+    if (!admin || !admin.adminId) throw { message: "Your admin session has no id — sign in again." };
+
+    let orderObj1688;
+    try {
+      orderObj1688 = await create1688Order(productObj, address.id);
+    } catch (err) {
+      console.error("create1688Order threw", err);
+      throw { code: "CLIENT_ERROR", message: (err && err.message) || "Unexpected error while creating the 1688 order." };
+    }
+    if (!orderObj1688) {
+      throw lastCreateOrderError || { message: "Failed to create the 1688 order." };
+    }
+
+    const date = new Date();
+    try {
+      await this.props.updateOrderApiRedux({
+        orderId: productObj.orderId,
+        agentStatus: "Picked",
+        agentId: admin.adminId,
+        pickedDate: date.toLocaleDateString("en-GB"),
+        pickedTime: date.toLocaleTimeString("en-GB"),
+        totalRmbAmount: parseFloat(totalRmb).toFixed(2),
+        agentCarton: carton,
+        orderNumber: orderObj1688.orderId ? orderObj1688.orderId : "",
+        creationTime1688: {
+          postFee: orderObj1688.postFee ? parseFloat(orderObj1688.postFee / 100).toFixed(2) : "",
+          totalSuccessAmount: orderObj1688.totalSuccessAmount
+            ? parseFloat(orderObj1688.totalSuccessAmount / 100).toFixed(2)
+            : "",
+        },
+        chinaAddress: address,
+      });
+    } catch (err) {
+      /* the 1688 order exists — say so, so nobody picks it again */
+      throw {
+        code: "SAVE_FAILED",
+        message: `The 1688 order ${orderObj1688.orderId || ""} was created, but saving it on this order failed (${
+          (err && err.message) || err
+        }). Don't pick again — add the 1688 order number with Update order.`,
+      };
+    }
+    toast.success(`Picked · 1688 order ${orderObj1688.orderId || ""} created`);
+  };
+
   render() {
     const {
       pageSize,
@@ -658,12 +710,6 @@ export class Datatable extends Component {
               (productObj.currency ? productObj.currency : currency.taka),
           );
 
-          console.log(
-            parseFloat(
-              (sku.price * sku.totalQuantity) /
-                (productObj.currency ? productObj.currency : currency.taka),
-            ),
-          );
         });
       });
     }
@@ -1107,18 +1153,11 @@ export class Datatable extends Component {
                   style={{ cursor: "pointer", display: "inline-block" }}
                   data-toggle={requestObj.trackingNo ? "modal" : ""}
                   data-target={requestObj.trackingNo ? "#trackingModal" : ""}
-                  onClick={async () => {
+                  onClick={() => {
+                    /* the modal shows the stored 1688 trace and fetches only
+                       when needed — never in the click */
                     if (requestObj.trackingNo) {
-                      let trackingArray = await get1688TrackingStatus(
-                        requestObj.orderNumber,
-                      );
-                      let trackingObj = trackingArray[0];
-                      console.log(requestObj.orderNumber);
-                      console.log(trackingObj);
-                      this.setState({
-                        productObj: requestObj,
-                        chineseTrackingObj: trackingObj,
-                      });
+                      this.setState({ trackingOrder: requestObj, trackingOpenKey: Date.now() });
                     }
                   }}
                 >
@@ -1532,7 +1571,6 @@ export class Datatable extends Component {
       },
     );
 
-    console.log(chineseTrackingObj);
 
     /* 17 narrow columns did not fit even a wide monitor, and react-table
        clipped whatever overflowed its default 100px. Fold related columns
@@ -1607,12 +1645,14 @@ export class Datatable extends Component {
           lineHeight: 1.7,
         }}
       >
-        <span style={{ color: "#94a3b8" }}>{label}</span>
+        <span style={{ color: "#94a3b8", whiteSpace: "nowrap", flexShrink: 0 }}>{label}</span>
         <span
           style={{
             color: color || "#334155",
             fontWeight: strong ? 700 : 500,
             whiteSpace: "nowrap",
+            textAlign: "right",
+            minWidth: 0,
           }}
         >
           {value}
@@ -1766,10 +1806,7 @@ export class Datatable extends Component {
               {line("fa-user", a.name)}
               {line("fa-phone", a.mobileNo)}
               {line("fa-home", a.address)}
-              {line(
-                "fa-map-marker",
-                [a.thana, a.district].filter(Boolean).join(", "),
-              )}
+              {line("fa-map-marker", addressAreaLine(a))}
             </div>
           </div>
         );
@@ -1839,16 +1876,17 @@ export class Datatable extends Component {
               value={rate > 0 ? `৳${rate}` : <span style={{ color: "#94a3b8" }}>Not set</span>}
             />
             {diff !== null && (
-              <KV
-                label="vs quoted"
-                strong
-                value={
-                  Math.abs(diff) < 0.005
-                    ? "Same"
-                    : `${diff > 0 ? "+" : "−"}${rmb(Math.abs(diff))} (quoted ${rmb(q.total)})`
-                }
-                color={Math.abs(diff) < 0.005 ? "#64748b" : diff > 0 ? "#dc2626" : "#16a34a"}
-              />
+              <>
+                {/* the difference and the quote on separate rows, so neither
+                    label nor value has to wrap in the narrow column */}
+                <KV
+                  label="vs quoted"
+                  strong
+                  value={Math.abs(diff) < 0.005 ? "Same" : `${diff > 0 ? "+" : "−"}${rmb(Math.abs(diff))}`}
+                  color={Math.abs(diff) < 0.005 ? "#64748b" : diff > 0 ? "#dc2626" : "#16a34a"}
+                />
+                {Math.abs(diff) >= 0.005 && <KV label="Quoted" value={rmb(q.total)} />}
+              </>
             )}
           </div>
         );
@@ -1863,12 +1901,13 @@ export class Datatable extends Component {
         ["Payment", "Payment status"],
         ["Order", "Order status"],
       ]),
-      /* Paicart warehouse: how it will reach the customer — the
-         customer's request from To Receive, or set here by staff */
-      ...(this.props.orderStatus == "Paicart-warehouse"
+      /* Custom released / Paicart warehouse: the delivery request (the
+         customer's, or set here by staff) in its own column so the status
+         column stays short */
+      ...(["custom-released", "Paicart-warehouse"].includes(this.props.orderStatus)
         ? [
-            custom("g-delivery", "Delivery request", 170, (order) => (
-              <DeliveryRequestCell kind="order" record={order} admin={currentAdmin} />
+            custom("g-delivery", "Delivery request status", 180, (order) => (
+              <DeliveryRequestCell kind="order" record={order} admin={currentAdmin} compact />
             )),
           ]
         : []),
@@ -3290,474 +3329,13 @@ export class Datatable extends Component {
             </div>
           </div>
         </div>
-        <div
-          className="modal fade"
-          id="pickModal"
-          tabIndex="-1"
-          role="dialog"
-          aria-labelledby="exampleModalLabel"
-          aria-hidden="true"
-        >
-          <div
-            className="modal-dialog"
-            role="document"
-            style={{ margin: "auto", minWidth: "60%" }}
-          >
-            <div className="modal-content" style={{ top: 10, margin: "auto" }}>
-              <div
-                className="modal-header"
-                style={{
-                  backgroundColor: "#ff6a00",
-                  paddingTop: 20,
-                  paddingBottom: 20,
-                }}
-              >
-                <div
-                  className="modal-title"
-                  style={{
-                    fontWeight: "bold",
-                    fontSize: 17,
-                    color: "white",
-                  }}
-                  id="exampleModalLabel"
-                >
-                  Order Id: {productObj && productObj.orderId}
-                </div>
-                <button
-                  type="button"
-                  className="close"
-                  data-dismiss="modal"
-                  aria-label="Close"
-                  id="personal-info-close"
-                >
-                  <span aria-hidden="true" style={{ color: "white" }}>
-                    &times;
-                  </span>
-                </button>
-              </div>
-
-              <div className="modal-body">
-                <div style={{ padding: "0px 15px" }}></div>
-
-                {this.props.orderStatus == "new" &&
-                  this.state.fraudCheckOrder && (
-                    <FraudCheckPanel
-                      phone={
-                        this.state.fraudCheckOrder.deliveryAddress?.mobileNo
-                      }
-                      name={this.state.fraudCheckOrder.deliveryAddress?.name}
-                    />
-                  )}
-
-                {productObj && productObj.warehouse && (
-                  <div style={{ fontSize: 11 }}>
-                    Warehouse Address:{" "}
-                    <span style={{ color: "gray", fontSize: 11 }}>
-                      {productObj && productObj.warehouse}
-                    </span>
-                  </div>
-                )}
-
-                {productObj &&
-                  productObj.items.length > 0 &&
-                  productObj.items.map((item) => (
-                    <div>
-                      {" "}
-                      <div style={{ fontWeight: "bold" }}>{item.name}</div>
-                      <div>
-                        Product Link:{" "}
-                        <a href={item.detail_url} target="_blank">
-                          <span style={{ color: "#ff8084" }}>
-                            {item.detail_url}
-                          </span>
-                        </a>
-                      </div>
-                      {productObj && productObj.additionalNotes && (
-                        <div style={{ fontWeight: "bold" }}>
-                          Additioinal notes:{" "}
-                          <span style={{ color: "red", fontWeight: "lighter" }}>
-                            {productObj.additionalNotes}
-                          </span>
-                        </div>
-                      )}
-                      <table className="table table-bordered table-striped table-hover">
-                        <tbody>
-                          {item.skus.map((sku) => (
-                            <tr>
-                              <td>
-                                <img
-                                  style={{
-                                    height: 70,
-                                    width: 70,
-                                    border: "1px solid gainsboro",
-                                    borderRadius: 5,
-                                  }}
-                                  src={
-                                    sku.image
-                                      ? sku.image
-                                      : item.picture
-                                        ? item.picture
-                                        : man
-                                  }
-                                />
-                              </td>
-                              <td>
-                                {item.propertyNames &&
-                                  item.propertyNames.length > 0 && (
-                                    <div>
-                                      {item.propertyNames[0]}: {sku.color},{" "}
-                                      <br />
-                                      {sku.size &&
-                                        `${item.propertyNames[1]}: ${sku.size}`}
-                                    </div>
-                                  )}
-                                Shipping Rate: {item.shippingRate} tk/kg
-                              </td>
-                              <td>{item.productType}</td>
-                              <td>
-                                {parseFloat(
-                                  sku.price /
-                                    (productObj.currency
-                                      ? productObj.currency
-                                      : currency.taka),
-                                ).toFixed(2)}
-                                rmb
-                              </td>
-                              <td>{sku.totalQuantity}pcs </td>
-
-                              <td>
-                                {parseFloat(
-                                  (sku.price * sku.totalQuantity) /
-                                    (productObj.currency
-                                      ? productObj.currency
-                                      : currency.taka),
-                                ).toFixed(2)}
-                                rmb
-                              </td>
-                            </tr>
-                          ))}{" "}
-                        </tbody>
-                      </table>
-                    </div>
-                  ))}
-
-                <div
-                  className="row"
-                  style={{
-                    marginBottom: 10,
-                    fontWeight: "bold",
-                    padding: 20,
-                    paddingTop: 0,
-                    justifyContent: "space-between",
-                  }}
-                >
-                  <div style={{ minWidth: 250 }}>
-                    <select
-                      title=""
-                      name="agentCarton"
-                      className="custom-select"
-                      aria-required="true"
-                      aria-invalid="false"
-                      onChange={this.handleChange}
-                      style={{ fontSize: ".8rem" }}
-                      value={this.state.agentCarton}
-                      required
-                    >
-                      <option value="">Select Carton</option>
-                      <option value="Shoes">Shoes</option>
-                      <option value="Clothing">Clothing</option>
-                      <option value="Bag">Bag</option>
-                      <option value="Cosmetics">Cosmetics</option>
-                      <option value="Jewelry">Jewelry</option>
-                      <option value="Machinary + Parts">
-                        Machinary + Parts
-                      </option>
-                      <option value="Battery Item">Battery Item</option>
-                      <option value="China Mix">China Mix</option>
-                      <option value="Hongkong Mix">Hongkong Mix</option>
-                    </select>
-                  </div>
-                  <div>
-                    Total rmb: {parseFloat(totalRmbAmount).toFixed(2)} Rmb
-                  </div>
-                </div>
-                <div
-                  className="row"
-                  style={{
-                    marginBottom: 10,
-                    fontWeight: "bold",
-                    padding: 20,
-                    paddingTop: 0,
-                    justifyContent: "space-between",
-                  }}
-                >
-                  <div
-                    style={{
-                      textAlign: "left",
-                      fontWeight: "bold",
-                      color: "black",
-                      padding: 20,
-                      paddingBottom: 10,
-                    }}
-                  >
-                    Choose China Shipping Address
-                  </div>
-                  <div>
-                    {shippingAddress && shippingAddress.length > 0 && (
-                      <div>
-                        {shippingAddress.map((address) => {
-                          const isSelected =
-                            this.state.selectedAddress &&
-                            this.state.selectedAddress.id === address.id;
-
-                          return (
-                            <div className="container my-2" key={address.id}>
-                              <div
-                                className="card border-0 shadow-lg rounded-lg overflow-hidden position-relative"
-                                style={{
-                                  borderRadius: "18px",
-                                }}
-                              >
-                                {/* Selected Badge */}
-                                {isSelected && (
-                                  <div
-                                    style={{
-                                      position: "absolute",
-                                      top: 12,
-                                      right: 12,
-                                      background: "#ec345b",
-                                      color: "white",
-                                      padding: "6px 12px",
-                                      borderRadius: "30px",
-                                      fontSize: "12px",
-                                      fontWeight: "600",
-                                      display: "flex",
-                                      alignItems: "center",
-                                      zIndex: 10,
-                                      boxShadow: "0 4px 10px rgba(0,0,0,0.15)",
-                                    }}
-                                  >
-                                    <i
-                                      className="icofont-check-circled"
-                                      style={{
-                                        marginRight: "6px",
-                                        fontSize: "14px",
-                                        color: "white",
-                                      }}
-                                    />
-                                    Selected
-                                  </div>
-                                )}
-
-                                <div
-                                  className="card-body p-4 bg-white"
-                                  style={{
-                                    cursor: "pointer",
-                                    border: isSelected
-                                      ? "2px solid #ec345b"
-                                      : "2px solid transparent",
-                                    borderRadius: 10,
-                                    transition: "all 0.25s ease",
-                                  }}
-                                  onClick={() => {
-                                    this.setState({ selectedAddress: address });
-                                  }}
-                                >
-                                  <p
-                                    className="mb-1"
-                                    style={{
-                                      color: isSelected ? "black" : "gray",
-                                    }}
-                                  >
-                                    <strong>Address Id:</strong> {address.id}
-                                  </p>
-                                  <p
-                                    className="mb-1"
-                                    style={{
-                                      color: isSelected ? "black" : "gray",
-                                    }}
-                                  >
-                                    <strong>Name:</strong> {address.fullName}
-                                  </p>
-
-                                  <p
-                                    className="mb-1"
-                                    style={{
-                                      color: isSelected ? "black" : "gray",
-                                    }}
-                                  >
-                                    <strong>Contact No:</strong>{" "}
-                                    {address.mobilePhone}
-                                  </p>
-
-                                  <p
-                                    className="mb-1"
-                                    style={{
-                                      color: isSelected ? "black" : "gray",
-                                    }}
-                                  >
-                                    <strong>Address:</strong> {address.address}
-                                  </p>
-
-                                  <p
-                                    className="mb-1"
-                                    style={{
-                                      color: isSelected ? "black" : "gray",
-                                    }}
-                                  >
-                                    <strong>Address Code:</strong>{" "}
-                                    {address.addressCode}
-                                  </p>
-
-                                  <p
-                                    className="mb-1"
-                                    style={{
-                                      color: isSelected ? "black" : "gray",
-                                    }}
-                                  >
-                                    <strong>Post:</strong> {address.post}
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    Total rmb: {parseFloat(totalRmbAmount).toFixed(2)} Rmb
-                  </div>
-                </div>
-              </div>
-              {this.state.pickOrderError && (
-                <div style={{ padding: "0px 20px" }}>
-                  <div
-                    style={{
-                      background: "#fdecea",
-                      border: "1px solid #f5c2c0",
-                      borderRadius: 5,
-                      padding: "10px 15px",
-                      marginBottom: 15,
-                      color: "#611a15",
-                    }}
-                  >
-                    <div style={{ fontWeight: "bold", marginBottom: 4 }}>
-                      1688 order creation failed:
-                    </div>
-                    <div style={{ fontSize: 13 }}>
-                      {this.state.pickOrderError.message ||
-                        this.state.pickOrderError.code ||
-                        "Unknown error"}
-                    </div>
-                  </div>
-                </div>
-              )}
-              <div className="modal-footer">
-                <button
-                  type="button"
-                  className="btn"
-                  style={{ background: "green", color: "white" }}
-                  onClick={async () => {
-                    if (!this.state.agentCarton) {
-                      alert(
-                        "Please choose a carton. You can't pick a order without choosing a carton",
-                      );
-                      return;
-                    }
-                    if (!this.state.selectedAddress.id) {
-                      alert(
-                        "Please choose a shipping address. You can't pick a order without choosing a shipping address",
-                      );
-                      return;
-                    }
-
-                    this.setState({ pickOrderError: null });
-
-                    let date = new Date();
-
-                    if (
-                      this.props.currentAdmin &&
-                      this.props.currentAdmin.adminId
-                    ) {
-                      console.log(productObj);
-
-                      let orderObj1688;
-                      try {
-                        orderObj1688 = await create1688Order(
-                          productObj,
-                          this.state.selectedAddress.id,
-                        );
-                      } catch (err) {
-                        console.error("create1688Order threw", err);
-                        this.setState({
-                          pickOrderError: {
-                            code: "CLIENT_ERROR",
-                            message:
-                              err?.message ||
-                              "Unexpected error while creating the 1688 order.",
-                          },
-                        });
-                        toast.error(
-                          "Unexpected error while creating the 1688 order.",
-                        );
-                        return;
-                      }
-
-                      if (!orderObj1688) {
-                        this.setState({
-                          pickOrderError: lastCreateOrderError,
-                        });
-                        toast.error(
-                          lastCreateOrderError?.message ||
-                            lastCreateOrderError?.code ||
-                            "Failed to create the 1688 order.",
-                        );
-                        return;
-                      }
-
-                      this.props.updateOrderApiRedux({
-                        orderId: productObj.orderId,
-                        agentStatus: "Picked",
-                        agentId: this.props.currentAdmin.adminId,
-                        pickedDate: date.toLocaleDateString("en-GB"),
-                        pickedTime: date.toLocaleTimeString("en-GB"),
-                        totalRmbAmount: parseFloat(totalRmbAmount).toFixed(2),
-                        agentCarton: this.state.agentCarton,
-                        orderNumber: orderObj1688.orderId
-                          ? orderObj1688.orderId
-                          : "",
-                        creationTime1688: {
-                          postFee: orderObj1688.postFee
-                            ? parseFloat(orderObj1688.postFee / 100).toFixed(2)
-                            : "",
-                          totalSuccessAmount: orderObj1688.totalSuccessAmount
-                            ? parseFloat(
-                                orderObj1688.totalSuccessAmount / 100,
-                              ).toFixed(2)
-                            : "",
-                        },
-                        chinaAddress: this.state.selectedAddress,
-                      });
-
-                      // CLOSE MODAL ONLY AFTER SUCCESS
-                      window.$("#pickModal").modal("hide");
-                    }
-                  }}
-                >
-                  Pick Order
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  data-dismiss="modal"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <PickOrderModal
+          order={productObj}
+          rate={productObj ? productObj.currency || (currency && currency.taka) : 0}
+          addresses={shippingAddress || []}
+          fraudCheckOrder={this.props.orderStatus == "new" ? this.state.fraudCheckOrder : null}
+          onPick={this.pickOrder}
+        />
 
         <PaymentModal
           idLabel="Order Id"
@@ -3865,381 +3443,8 @@ export class Datatable extends Component {
           payments={productObj && productObj.payments}
         />
 
-        <div
-          className="modal fade"
-          id="trackingModal"
-          tabIndex="-1"
-          role="dialog"
-          aria-labelledby="exampleModalLabel"
-          aria-hidden="true"
-        >
-          <div
-            className="modal-dialog"
-            role="document"
-            style={{ margin: "auto", minWidth: "60%" }}
-          >
-            <div className="modal-content" style={{ top: 10, margin: "auto" }}>
-              <div
-                className="modal-header"
-                style={{
-                  backgroundColor: "#ff6a00",
-                  paddingTop: 20,
-                  paddingBottom: 20,
-                }}
-              >
-                <div
-                  className="modal-title"
-                  style={{
-                    fontWeight: "bold",
-                    fontSize: 17,
-                    color: "white",
-                  }}
-                  id="exampleModalLabel"
-                >
-                  Tracking No: {productObj && productObj.trackingNo}
-                </div>
-                <button
-                  type="button"
-                  className="close"
-                  data-dismiss="modal"
-                  aria-label="Close"
-                  id="personal-info-close"
-                >
-                  <span aria-hidden="true" style={{ color: "white" }}>
-                    &times;
-                  </span>
-                </button>
-              </div>
-              {chineseTrackingObj && (
-                <div className="modal-body">
-                  <div className="row">
-                    <div
-                      className="col"
-                      style={{
-                        fontWeight: "bold",
-                        borderBottom: "1px solid gainsboro",
-                        paddingBottom: 5,
-                      }}
-                    >
-                      Order Id (1688): {productObj && productObj.orderNumber}
-                    </div>
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 10,
-                      padding: 40,
-                      paddingBottom: 0,
-                      paddingTop: 20,
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        margin: "30px 0",
-                      }}
-                    >
-                      {/* Step 1 */}
-                      <div
-                        style={{
-                          textAlign: "center",
-                          color: "#fff",
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: "70px",
-                            height: "70px",
-                            borderRadius: "50%",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            margin: "auto",
-                            fontSize: "26px",
-                            backgroundColor:
-                              productObj.chineseShipmentStatusScore == 1
-                                ? "white"
-                                : productObj.chineseShipmentStatusScore > 1
-                                  ? "#f9c9a9"
-                                  : "#eee",
-                            border:
-                              productObj.chineseShipmentStatusScore == 1
-                                ? "3px solid #f60"
-                                : "none",
-                          }}
-                        >
-                          🏭
-                        </div>
-                        <div
-                          style={{
-                            color:
-                              productObj.chineseShipmentStatusScore >= 1
-                                ? "#f60"
-                                : "#bbb",
-                            marginTop: "8px",
-                          }}
-                        >
-                          Consigned
-                        </div>
-                      </div>
+        <TrackingModal1688 order={this.state.trackingOrder} openKey={this.state.trackingOpenKey} />
 
-                      {/* Dotted line */}
-                      <div
-                        style={{
-                          flex: 1,
-                          borderTop:
-                            productObj.chineseShipmentStatusScore > 1
-                              ? "2px dashed #f6c8a5"
-                              : "2px dashed #ddd",
-                          margin: "0 10px",
-                        }}
-                      ></div>
-
-                      {/* Step 2 */}
-                      <div
-                        style={{
-                          textAlign: "center",
-                          color: "#fff",
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: "70px",
-                            height: "70px",
-                            borderRadius: "50%",
-
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            margin: "auto",
-                            fontSize: "26px",
-                            backgroundColor:
-                              productObj.chineseShipmentStatusScore == 2
-                                ? "white"
-                                : productObj.chineseShipmentStatusScore > 2
-                                  ? "#f9c9a9"
-                                  : "#eee",
-                            border:
-                              productObj.chineseShipmentStatusScore == 2
-                                ? "3px solid #f60"
-                                : "none",
-                          }}
-                        >
-                          📦
-                        </div>
-                        <div
-                          style={{
-                            color:
-                              productObj.chineseShipmentStatusScore >= 2
-                                ? "#f60"
-                                : "#bbb",
-                            marginTop: "8px",
-                          }}
-                        >
-                          Shipped
-                        </div>
-                      </div>
-
-                      {/* Dotted line */}
-                      <div
-                        style={{
-                          flex: 1,
-                          borderTop:
-                            productObj.chineseShipmentStatusScore > 2
-                              ? "2px dashed #f6c8a5"
-                              : "2px dashed #ddd",
-                          margin: "0 10px",
-                        }}
-                      ></div>
-
-                      {/* Step 3 (active) */}
-                      <div
-                        style={{
-                          textAlign: "center",
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: "70px",
-                            height: "70px",
-                            borderRadius: "50%",
-
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            margin: "auto",
-                            fontSize: "26px",
-                            color: "#f60",
-                            backgroundColor:
-                              productObj.chineseShipmentStatusScore == 3
-                                ? "white"
-                                : productObj.chineseShipmentStatusScore > 3
-                                  ? "#f9c9a9"
-                                  : "#eee",
-                            border:
-                              productObj.chineseShipmentStatusScore == 3
-                                ? "3px solid #f60"
-                                : "none",
-                          }}
-                        >
-                          🚚
-                        </div>
-                        <div
-                          style={{
-                            color:
-                              productObj.chineseShipmentStatusScore >= 3
-                                ? "#f60"
-                                : "#bbb",
-                            marginTop: "8px",
-                          }}
-                        >
-                          In Transit
-                        </div>
-                      </div>
-
-                      {/* Dotted line */}
-                      <div
-                        style={{
-                          flex: 1,
-                          borderTop:
-                            productObj.chineseShipmentStatusScore > 3
-                              ? "2px dashed #f6c8a5"
-                              : "2px dashed #ddd",
-                          margin: "0 10px",
-                        }}
-                      ></div>
-
-                      {/* Step 4 */}
-                      <div
-                        style={{
-                          textAlign: "center",
-                          color: "#bbb",
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: "70px",
-                            height: "70px",
-                            borderRadius: "50%",
-
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            margin: "auto",
-                            fontSize: "26px",
-                            backgroundColor:
-                              productObj.chineseShipmentStatusScore == 4
-                                ? "white"
-                                : productObj.chineseShipmentStatusScore > 4
-                                  ? "#f9c9a9"
-                                  : "#eee",
-                            border:
-                              productObj.chineseShipmentStatusScore == 4
-                                ? "3px solid #f60"
-                                : "none",
-                          }}
-                        >
-                          🕵
-                        </div>
-                        <div
-                          style={{
-                            color:
-                              productObj.chineseShipmentStatusScore >= 4
-                                ? "#f60"
-                                : "#bbb",
-                            marginTop: "8px",
-                          }}
-                        >
-                          Delivering
-                        </div>
-                      </div>
-
-                      {/* Dotted line */}
-                      <div
-                        style={{
-                          flex: 1,
-                          borderTop:
-                            productObj.chineseShipmentStatusScore > 4
-                              ? "2px dashed #f6c8a5"
-                              : "2px dashed #ddd",
-                          margin: "0 10px",
-                        }}
-                      ></div>
-
-                      {/* Step 5 */}
-                      <div
-                        style={{
-                          textAlign: "center",
-                          color: "#bbb",
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: "70px",
-                            height: "70px",
-                            borderRadius: "50%",
-
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            margin: "auto",
-                            fontSize: "26px",
-                            backgroundColor:
-                              productObj.chineseShipmentStatusScore == 5
-                                ? "#f9c9a9"
-                                : productObj.chineseShipmentStatusScore > 5
-                                  ? "#f9c9a9"
-                                  : "#eee",
-                            border:
-                              productObj.chineseShipmentStatusScore == 5
-                                ? "3px solid #f60"
-                                : "none",
-                          }}
-                        >
-                          ✅
-                        </div>
-                        <div
-                          style={{
-                            color:
-                              productObj.chineseShipmentStatusScore >= 5
-                                ? "#f60"
-                                : "#bbb",
-                            marginTop: "8px",
-                          }}
-                        >
-                          Delivered
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style={{ margin: 20 }}>
-                    <div
-                      style={{
-                        background: "#f6f6f6ff",
-                        borderRadius: 5,
-                        padding: 15,
-                      }}
-                    >
-                      {this.getTracing(chineseTrackingObj.logisticsSteps)}
-                    </div>
-                  </div>
-                </div>
-              )}
-              <div className="modal-footer">
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  data-dismiss="modal"
-                  id="close-button-for-payment-modal"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
         <div
           className="modal fade"
           id="deleteModal"

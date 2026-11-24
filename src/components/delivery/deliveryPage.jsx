@@ -3,13 +3,18 @@ import { useSelector } from "react-redux";
 import {
   Search, Clock, CheckCircle, ExternalLink, Eye, Navigation, ArrowRight, Edit, RotateCcw,
   AlertTriangle, Truck, Printer, FileText, Download, Trash2, Package, X, RefreshCw, Box,
+  Copy, Calendar, Phone, MapPin,
 } from "react-feather";
 import { showDialog } from "../common/appDialog.jsx";
 import {
   approvePathaoDeliveryPayment,
   deletePathaoDelivery,
   getCustomersForSearch,
-  getDeliverySectionData,
+  getDeliveryRequests,
+  getPathaoDeliveriesOverview,
+  getPathaoDeliveriesPage,
+  searchPathaoDeliveries,
+  ensurePathaoSearchKeys,
   setWarehouseDeliveryStatus,
   updateParcelRecordFields,
   updatePathaoDelivery,
@@ -18,6 +23,7 @@ import { getPathaoOrderInfo } from "../../constants/pathao";
 import {
   CLOSED_STATUSES,
   ORDER_TYPES,
+  DELIVERY_TYPE_OF_METHOD,
   PATHAO_STATUSES,
   TIME_FILTERS,
   WAREHOUSE,
@@ -37,6 +43,9 @@ import {
 } from "../../constants/deliveryPanel";
 import { ApprovalModal, BillModal, ParcelInfoModal, WarehouseStatusModal } from "./deliveryModals.jsx";
 import PathaoDispatchDrawer from "./pathaoDispatchDrawer.jsx";
+import PathaoInvoices from "./pathaoInvoices.jsx";
+import { getPathaoInvoices } from "../../constants/pathao";
+import { getPathaoInvoiceReceipts } from "../../firebase/firebase.utils";
 import { openPODPopup, openViewNewPODReport, printActiveDeliveries } from "./deliveryReports";
 import "./delivery.css";
 
@@ -46,6 +55,31 @@ import "./delivery.css";
  * Delivery Requests, or entered by staff on a Paicart warehouse list.
  * Delivery staff (role "Delivery") see only this page. */
 
+/* a pathaoDeliveries doc → the row the table, POD and print read */
+const decorateDelivery = (d) => ({
+  ...d,
+  paymentStatus: paymentStatusOf(d.parcelStatus),
+  report: {
+    pathaoId: d.pathaoId,
+    bookingId: d.bookingId,
+    displayDate: displayDate(d.date),
+    customerId: (d.customer && d.customer.userId) || "",
+    customerName: (d.customer && d.customer.name) || "",
+    customerAddress: (d.customer && d.customer.address) || "",
+    customerPhone: (d.customer && d.customer.phone) || "",
+    shippingMark: d.shippingMark || "",
+    productName: d.productName || "",
+    parcelType: d.parcelType || "Single CTN",
+    cartons: d.cartons || [],
+    totalWeightNumber: Number(d.totalWeight) || 0,
+    billTotal: Number(d.total) || 0,
+    paymentStatus: paymentStatusOf(d.parcelStatus),
+    parcelStatus: d.parcelStatus,
+  },
+});
+
+/* Pathao Deliveries: rows per page */
+const DL_PAGE_SIZE = 20;
 const STATUS_STYLE = {
   "Pathao pickup requested": { bg: "#fff7ed", fg: "#c2410c", line: "#fed7aa", dot: "#f97316", live: true },
   "Rider Assigned": { bg: "#fffbeb", fg: "#b45309", line: "#fde68a", dot: "#f59e0b", live: true },
@@ -100,11 +134,54 @@ const DeliveryPage = () => {
   const [apExpanded, setApExpanded] = useState(false);
   /* warehouse section */
   const [whView, setWhView] = useState("active");
+  /* three tabs: warehouse parcels / Pathao deliveries / Pathao payment
+     (?tab=warehouse|deliveries|payment keeps the choice on reload) */
+  const [mainTab, setMainTab] = useState(() => {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    return ["warehouse", "deliveries", "payment"].includes(t) ? t : "warehouse";
+  });
+  const switchTab = (t) => {
+    setMainTab(t);
+    const q = new URLSearchParams(window.location.search);
+    q.set("tab", t);
+    window.history.replaceState(null, "", `${window.location.pathname}?${q.toString()}`);
+  };
+  /* Pathao consignment → its Pathao invoice (filled by <PathaoInvoices />) */
+  const [invoiceOf, setInvoiceOf] = useState({});
+  /* paid Pathao invoices not yet received in Paicart (latest page) — the
+     Pathao Payment tab's count, known before the tab is opened */
+  const [awaitingReceive, setAwaitingReceive] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    getPathaoInvoices({ page: 1, limit: 10 })
+      .then(async (l) => {
+        const rows = (l && l.data) || [];
+        const paid = rows.filter((r) => String(r.status).toLowerCase() === "paid");
+        const rc = await getPathaoInvoiceReceipts(paid.map((r) => r.order_invoice_id));
+        if (alive) setAwaitingReceive(paid.filter((r) => !rc[r.order_invoice_id]).length);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
   const [whType, setWhType] = useState("All");
+  /* ?type=<method>&focus=<kind-id> — from a list's "In Delivery section" link */
+  const urlParams = new URLSearchParams(window.location.search);
+  const [whMethod, setWhMethod] = useState(urlParams.get("type") || "All");
+  const [focusKey] = useState(urlParams.get("focus") || "");
   const [whSearch, setWhSearch] = useState("");
   const [selected, setSelected] = useState({});
   /* deliveries section */
   const [dlSearch, setDlSearch] = useState("");
+  const [dlPage, setDlPage] = useState(1);
+  const [dlRows, setDlRows] = useState([]);
+  const [dlCursors, setDlCursors] = useState([null]);
+  const [dlHasMore, setDlHasMore] = useState(false);
+  const [dlLoading, setDlLoading] = useState(false);
+  const [dlError, setDlError] = useState("");
+  /* bump to refetch the current view (after a booking / delete) */
+  const [dlReload, setDlReload] = useState(0);
   const [dlStatus, setDlStatus] = useState("All");
   const [dlPayment, setDlPayment] = useState("All");
   const [dlTime, setDlTime] = useState("all");
@@ -157,8 +234,8 @@ const DeliveryPage = () => {
   const load = useCallback(() => {
     setLoading(true);
     setError("");
-    Promise.all([getDeliverySectionData(), getCustomersForSearch()])
-      .then(([{ requests, bookings: list }, userList]) => {
+    Promise.all([getDeliveryRequests(), getPathaoDeliveriesOverview(), getCustomersForSearch()])
+      .then(([requests, list, userList]) => {
         const index = {};
         (userList || []).forEach((u) => {
           if (u && u.id) index[u.id] = u;
@@ -168,12 +245,17 @@ const DeliveryPage = () => {
         const sorted = list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
         setBookings(sorted);
         setSelected({});
+        setDlReload((n) => n + 1);
         syncPathao(sorted, requests);
       })
       .catch((e) => setError(String((e && e.message) || e)))
       .finally(() => setLoading(false));
   }, [syncPathao]);
   useEffect(load, [load]);
+  /* deliveries saved before search existed get their keywords (once) */
+  useEffect(() => {
+    ensurePathaoSearchKeys().catch(() => {});
+  }, []);
 
   /* ── derived lists ── */
   const rows = useMemo(
@@ -186,43 +268,18 @@ const DeliveryPage = () => {
   );
   const rowByItem = useCallback((kind, id) => rows.find((r) => r.kind === kind && String(r.id) === String(id)), [rows]);
 
-  const deliveries = useMemo(
-    () =>
-      bookings.map((d) => ({
-        ...d,
-        paymentStatus: paymentStatusOf(d.parcelStatus),
-        /* the shape the POD / print reports read */
-        report: {
-          pathaoId: d.pathaoId,
-          bookingId: d.bookingId,
-          displayDate: displayDate(d.date),
-          customerId: (d.customer && d.customer.userId) || "",
-          customerName: (d.customer && d.customer.name) || "",
-          customerAddress: (d.customer && d.customer.address) || "",
-          customerPhone: (d.customer && d.customer.phone) || "",
-          shippingMark: d.shippingMark || "",
-          productName: d.productName || "",
-          parcelType: d.parcelType || "Single CTN",
-          cartons: d.cartons || [],
-          totalWeightNumber: Number(d.totalWeight) || 0,
-          billTotal: Number(d.total) || 0,
-          paymentStatus: paymentStatusOf(d.parcelStatus),
-          parcelStatus: d.parcelStatus,
-        },
-      })),
-    [bookings],
-  );
+  const deliveries = useMemo(() => bookings.map(decorateDelivery), [bookings]);
 
   /* the "↓ POD" buttons inside View New POD call back into this page */
   useEffect(() => {
     window.__paicartOpenPOD = (id) => {
-      const d = deliveries.find((x) => String(x.pathaoId) === String(id));
+      const d = deliveries.find((x) => String(x.pathaoId) === String(id)) || dlRows.find((x) => String(x.pathaoId) === String(id));
       openPODPopup(d ? d.report : undefined);
     };
     return () => {
       delete window.__paicartOpenPOD;
     };
-  }, [deliveries]);
+  }, [deliveries, dlRows]);
 
   const k = useMemo(() => kpis(deliveries), [deliveries]);
 
@@ -246,6 +303,7 @@ const DeliveryPage = () => {
     (r) =>
       r.view === whView &&
       (whType === "All" || r.type === whType) &&
+      (whMethod === "All" || r.method === whMethod) &&
       (!whQuery ||
         [r.id, r.userId, r.customer, r.mobile, r.type, r.shippingMark, r.product, r.deliveryType, ...r.cartons.map((c) => c.trackingNo), ...r.cartons.map((c) => c.name)]
           .filter(Boolean)
@@ -260,20 +318,76 @@ const DeliveryPage = () => {
   const visibleSelectable = whShown.filter(selectable);
   const allVisibleChecked = visibleSelectable.length > 0 && visibleSelectable.every((r) => selected[r.key]);
 
-  /* deliveries rows */
-  const dlQuery = dlSearch.trim().toLowerCase();
-  const timeDays = (TIME_FILTERS.find((t) => t.key === dlTime) || TIME_FILTERS[0]).days;
-  const dlShown = deliveries.filter(
-    (d) =>
-      (dlStatus === "All" || String(d.parcelStatus).toLowerCase() === dlStatus.toLowerCase()) &&
-      (dlPayment === "All" || d.paymentStatus === dlPayment) &&
-      withinDays(d.date, timeDays) &&
-      (!dlQuery ||
-        [d.pathaoId, d.bookingId, d.shippingMark, d.productName, d.customer && d.customer.name, d.customer && d.customer.userId, d.customer && d.customer.phone, d.customer && d.customer.address]
-          .filter(Boolean)
-          .some((v) => String(v).toLowerCase().includes(dlQuery))),
-  );
+  /* deliveries table — read from Firestore page by page (newest first) or
+     by a live search; never the whole collection */
   const activeCount = deliveries.filter((d) => !CLOSED_STATUSES.includes(d.parcelStatus)).length;
+  const timeDays = (TIME_FILTERS.find((t) => t.key === dlTime) || TIME_FILTERS[0]).days;
+  const dlQuery = dlSearch.trim();
+  const fetchDlPage = useCallback(
+    async (pageIndex, cursors) => {
+      setDlLoading(true);
+      setDlError("");
+      try {
+        const res = await getPathaoDeliveriesPage({
+          after: cursors[pageIndex] || null,
+          pageSize: DL_PAGE_SIZE,
+          status: dlStatus,
+          payment: dlPayment,
+          sinceMs: timeDays ? Date.now() - timeDays * 86400000 : null,
+        });
+        const nextCursors = cursors.slice(0, pageIndex + 1);
+        nextCursors[pageIndex + 1] = res.last;
+        setDlCursors(nextCursors);
+        setDlPage(pageIndex + 1);
+        setDlHasMore(res.hasMore);
+        setDlRows(res.rows.map(decorateDelivery));
+      } catch (e) {
+        setDlError(String((e && e.message) || e));
+        setDlRows([]);
+      } finally {
+        setDlLoading(false);
+      }
+    },
+    [dlStatus, dlPayment, timeDays]
+  );
+  /* filters (or a cleared search) → newest page */
+  useEffect(() => {
+    if (dlQuery) return undefined;
+    fetchDlPage(0, [null]);
+    return undefined;
+  }, [fetchDlPage, dlQuery, dlReload]);
+  /* search → live Firestore lookup (debounced) */
+  useEffect(() => {
+    if (!dlQuery) return undefined;
+    let alive = true;
+    setDlLoading(true);
+    setDlError("");
+    const t = setTimeout(() => {
+      searchPathaoDeliveries(dlQuery)
+        .then((list) => {
+          if (!alive) return;
+          const rowsFound = list
+            .map(decorateDelivery)
+            .filter(
+              (d) =>
+                (dlStatus === "All" || String(d.parcelStatus).toLowerCase() === dlStatus.toLowerCase()) &&
+                (dlPayment === "All" || d.paymentStatus === dlPayment) &&
+                withinDays(d.date, timeDays)
+            );
+          setDlRows(rowsFound);
+          setDlHasMore(false);
+          setDlPage(1);
+        })
+        .catch((e) => alive && setDlError(String((e && e.message) || e)))
+        .finally(() => alive && setDlLoading(false));
+    }, 400);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [dlQuery, dlStatus, dlPayment, timeDays, dlReload]);
+  const dlShown = dlRows;
+  const dlPaged = dlRows;
 
   /* ── actions ── */
   const saveWarehouseStatus = async (row, status) => {
@@ -347,6 +461,7 @@ const DeliveryPage = () => {
       message: warning || "The parcel moved to Pathao Deliveries.",
       items: made.map((d) => ({ label: `${d.pathaoId} · ${d.parcelType} · ${d.deliveryType}`, value: money(d.total), tone: "success" })),
     });
+    if (made.length) switchTab("deliveries");
     load();
   };
 
@@ -386,96 +501,29 @@ const DeliveryPage = () => {
             {kpiTile("Total COD Amount", money(k.codTotal), "#2563eb", "Pending collection", "#3b82f6")}
           </div>
 
-          {/* ── Waiting Pathao Payment Approval ── */}
-          <div className="dl-card dl-card-orange">
-            <div className="dl-card-head is-orange">
-              <div style={{ display: "flex", gap: 10, alignItems: "flex-start", maxWidth: 560 }}>
-                <span className="dl-icon-tile"><Navigation size={16} /></span>
-                <div>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                    <h2 className="dl-h2">Waiting Pathao Payment Approval</h2>
-                    <span className="dl-pill" style={{ background: "#ffedd5", color: "#e04500" }}><Clock size={11} /> {apMatches.length} {apView === "pending" ? "Pending Review" : "Approved"}</span>
-                  </div>
-                  <p className="dl-sub">Review collection = order due after discount + final delivery charge + COD charge (usually 1% of due + delivery). Pathao may adjust charges after pickup.</p>
-                </div>
-              </div>
-              <div className="dl-controls">
-                <SearchBox value={apSearch} onChange={(v) => { setApSearch(v); setApExpanded(false); }} placeholder="Search Pathao ID or Customer / Order ID..." width={270} />
-                <div className="dl-seg">
-                  {["pending", "approved"].map((v) => (
-                    <button key={v} type="button" className={apView === v ? "is-on" : ""} aria-pressed={apView === v} onClick={() => { setApView(v); setApExpanded(false); }}>
-                      {v === "pending" ? "Pending Review" : "Approved"}
-                    </button>
-                  ))}
-                </div>
-                {!apQuery && apExtra > 0 && (
-                  <button type="button" className="dl-btn dl-btn-primary" onClick={() => setApExpanded(!apExpanded)}>
-                    {apExpanded ? "Show Less" : `Show More (${apExtra})`}
-                  </button>
-                )}
-              </div>
-            </div>
-            <div className="dl-table-wrap">
-              <table className="dl-table">
-                <thead>
-                  <tr>
-                    <th>Pathao ID</th><th>Customer &amp; Order ID</th><th>Parcel Weight</th><th>Website Order Due</th><th>Pathao Paid</th>
-                    <th>Delivery Charge</th><th>COD Charge</th><th>Collection Amount</th><th>Adjustment Amount</th><th>Status</th><th className="right">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {apShown.length === 0 ? (
-                    <tr><td colSpan={11} className="dl-empty">{apQuery ? "No matching Pathao ID or Customer / Order ID found." : apView === "pending" ? "No pending reviews to show." : "No approved payments to show."}</td></tr>
-                  ) : (
-                    apShown.map((d) => {
-                      const a = approvalAmounts(d);
-                      const approved = approvalStatusOf(d) === "approved";
-                      return (
-                        <tr key={d.id}>
-                          <td className="dl-mono dl-brand">{d.pathaoId}</td>
-                          <td>
-                            <div className="dl-strong">{d.customer && d.customer.name}</div>
-                            <div className="dl-muted">{[d.customer && d.customer.userId, (d.items || []).map((i) => `#${i.id}`).join(", "), d.customer && d.customer.phone].filter(Boolean).join(" · ")}</div>
-                          </td>
-                          <td><span className="dl-weight-chip">{Number(d.totalWeight || 0).toFixed(1)} kg · {(d.cartons || []).length} {(d.cartons || []).length === 1 ? "Ctn" : "Ctns"}</span></td>
-                          <td className="dl-strong">{approvalMoney(a.due)}</td>
-                          <td className="dl-strong">{approvalMoney(a.paid)}</td>
-                          <td style={{ fontWeight: 800, color: a.newDelivery > a.oldDelivery ? "#dc2626" : "#16a34a" }}>{approvalMoney(a.newDelivery)}</td>
-                          <td style={{ fontWeight: 800, color: a.newCod > a.oldCod ? "#dc2626" : "#16a34a" }}>{approvalMoney(a.newCod)}</td>
-                          <td title="Website due after discount + final delivery charge + final COD charge">
-                            <div style={{ fontWeight: 900, color: "#1d4ed8" }}>{approvalMoney(a.collection)}</div>
-                            <div style={{ fontSize: 9, color: "#9ca3af" }}>Due + Delivery + COD</div>
-                          </td>
-                          <td>
-                            {a.adjustment > 0 ? <b style={{ color: "#ff5000" }}>-{approvalMoney(a.adjustment)}</b>
-                              : a.extra > 0 ? <><b style={{ color: "#1d4ed8" }}>+{approvalMoney(a.extra)}</b><div style={{ fontSize: 9, color: "#3b82f6" }}>Extra amount</div></>
-                                : "—"}
-                          </td>
-                          <td>
-                            {approved ? (
-                              <span className="dl-pill" style={{ background: "#f0fdf4", color: "#15803d", borderColor: "#bbf7d0" }}><CheckCircle size={11} /> Approved</span>
-                            ) : (
-                              <button type="button" className="dl-pill" style={{ background: "#fff7ed", color: "#ff5000", borderColor: "#fed7aa", cursor: "pointer" }} onClick={() => setApprovalOf(d)}>
-                                <Clock size={11} /> Pending Review
-                              </button>
-                            )}
-                          </td>
-                          <td className="right">
-                            {approved ? (
-                              <button type="button" className="dl-btn dl-btn-blue dl-btn-sm" onClick={() => setApprovalOf(d)}><Eye size={12} /> View details</button>
-                            ) : (
-                              <button type="button" className="dl-btn dl-btn-primary dl-btn-sm" onClick={() => setApprovalOf(d)}>Open <ExternalLink size={12} /></button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
+          {/* ── section tabs ── */}
+          <div className="dl-maintabs" role="tablist">
+            {[
+              ["warehouse", "Paicart Warehouse Parcels", rows.filter((r) => r.view === "active").length, <Box size={14} key="i" />],
+              ["deliveries", "Pathao Deliveries", deliveries.length, <Truck size={14} key="i" />],
+              ["payment", "Pathao Payment", awaitingReceive, <Navigation size={14} key="i" />],
+            ].map(([key, label, count, icon]) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={mainTab === key}
+                className={`dl-maintab${mainTab === key ? " is-on" : ""}`}
+                onClick={() => switchTab(key)}
+              >
+                {icon} {label}
+                <span className="dl-maintab-count">{count}</span>
+              </button>
+            ))}
           </div>
 
+          {mainTab === "warehouse" && (
+            <>
           {/* ── Paicart Warehouse Parcels ── */}
           <div className="dl-card">
             <div className="dl-card-head">
@@ -489,6 +537,10 @@ const DeliveryPage = () => {
                 <select className="dl-select" value={whType} onChange={(e) => setWhType(e.target.value)} aria-label="Order type">
                   <option value="All">Order Type: All</option>
                   {ORDER_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+                <select className="dl-select" value={whMethod} onChange={(e) => setWhMethod(e.target.value)} aria-label="Delivery type">
+                  <option value="All">Delivery Type: All</option>
+                  {Object.keys(DELIVERY_TYPE_OF_METHOD).map((m) => <option key={m} value={m}>{DELIVERY_TYPE_OF_METHOD[m]}</option>)}
                 </select>
                 <SearchBox value={whSearch} onChange={setWhSearch} placeholder="Search ID, Mark, Tracking..." width={210} />
               </div>
@@ -524,7 +576,11 @@ const DeliveryPage = () => {
                       const remaining = remainingCartons(r);
                       const partial = r.method === "pathao" && remaining.length > 0 && remaining.length < r.cartons.length;
                       return (
-                        <tr key={r.key}>
+                        <tr
+                          key={r.key}
+                          ref={r.key === focusKey ? (el) => el && !el.dataset.seen && ((el.dataset.seen = "1"), el.scrollIntoView({ block: "center", behavior: "smooth" })) : undefined}
+                          style={r.key === focusKey ? { background: "#fff7ed", boxShadow: "inset 3px 0 0 #ff6a00" } : undefined}
+                        >
                           <td>
                             <input
                               type="checkbox"
@@ -608,7 +664,11 @@ const DeliveryPage = () => {
               </table>
             </div>
           </div>
+            </>
+          )}
 
+          {mainTab === "deliveries" && (
+            <>
           {/* ── Pathao Deliveries ── */}
           <div className="dl-card" style={{ borderRadius: 16 }}>
             <div className="dl-card-head is-gray">
@@ -620,7 +680,7 @@ const DeliveryPage = () => {
                 </div>
               </div>
               <div className="dl-controls">
-                <SearchBox value={dlSearch} onChange={setDlSearch} placeholder="Search customer / Pathao ID..." width={190} />
+                <SearchBox value={dlSearch} onChange={setDlSearch} placeholder="Pathao ID, order ID, phone, name…" width={220} />
                 <select className="dl-select" value={dlStatus} onChange={(e) => setDlStatus(e.target.value)} aria-label="Parcel status">
                   <option value="All">All Status</option>
                   {PATHAO_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -653,20 +713,34 @@ const DeliveryPage = () => {
                 </thead>
                 <tbody>
                   {dlShown.length === 0 ? (
-                    <tr><td colSpan={11} className="dl-empty">{deliveries.length ? "No Pathao deliveries match these filters." : "No Pathao bookings yet. Book a parcel from Paicart Warehouse Parcels."}</td></tr>
+                    <tr><td colSpan={11} className="dl-empty">{dlLoading ? "Loading…" : dlQuery ? `No delivery found for "${dlQuery}".` : "No Pathao deliveries match these filters."}</td></tr>
                   ) : (
-                    dlShown.map((d) => (
+                    dlPaged.map((d) => (
                       <tr key={d.id}>
-                        <td style={{ background: "rgba(249,250,251,.4)" }}>
-                          <div className="dl-mono dl-brand">{d.pathaoId}</div>
-                          <div className="dl-mono" style={{ fontSize: 10, color: "#9ca3af" }}>📅 {displayDate(d.date)}</div>
+                        <td className="dl-cid">
+                          <span className="dl-cid-chip">
+                            <span>{d.pathaoId}</span>
+                            <button
+                              type="button"
+                              title="Copy Pathao order ID"
+                              onClick={() => navigator.clipboard && navigator.clipboard.writeText(String(d.pathaoId || ""))}
+                            >
+                              <Copy size={11} />
+                            </button>
+                          </span>
+                          <span className="dl-cid-date"><Calendar size={11} /> {displayDate(d.date)}</span>
                         </td>
-                        <td>
-                          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                            {d.customer && d.customer.userId && <span style={{ fontSize: 10, fontWeight: 800, color: "#e04500", background: "#fff7ed", borderRadius: 4, padding: "1px 5px" }}>{d.customer.userId}</span>}
-                            <b style={{ color: "#111827" }}>{d.customer && d.customer.name}</b>
+                        <td className="dl-cust">
+                          <div className="dl-cust-top">
+                            {d.customer && d.customer.userId && <span className="dl-cust-id">{d.customer.userId}</span>}
+                            <b>{(d.customer && d.customer.name) || "Customer"}</b>
                           </div>
-                          <div className="dl-muted">{[d.customer && d.customer.address, d.customer && d.customer.phone].filter(Boolean).join(" · ")}</div>
+                          {d.customer && d.customer.phone && (
+                            <a className="dl-cust-line dl-cust-phone" href={`tel:${d.customer.phone}`}><Phone size={11} /> {d.customer.phone}</a>
+                          )}
+                          {d.customer && d.customer.address && (
+                            <span className="dl-cust-line dl-cust-addr" title={d.customer.address}><MapPin size={11} /> <span>{d.customer.address}</span></span>
+                          )}
                         </td>
                         <td style={{ fontWeight: 600, color: "#1f2937" }}>{d.shippingMark || "—"}</td>
                         <td style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={d.productName}>{d.productName}</td>
@@ -708,7 +782,52 @@ const DeliveryPage = () => {
                 </tbody>
               </table>
             </div>
+            {dlError && (
+              <div className="dl-infobox red" style={{ margin: "10px 16px" }}>
+                {/requires an index/i.test(dlError) ? (
+                  <>
+                    This filter needs a one-time Firestore index (parcel status + date).{" "}
+                    {(dlError.match(/https:\/\/console\.firebase\.google\.com\S+/) || [])[0] && (
+                      <a href={(dlError.match(/https:\/\/console\.firebase\.google\.com\S+/) || [])[0]} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 700, textDecoration: "underline" }}>
+                        Create the index ↗
+                      </a>
+                    )}{" "}
+                    — click Save there; it is ready in a few minutes, then this filter works for good.
+                  </>
+                ) : (
+                  <>Could not load deliveries: {dlError}</>
+                )}
+              </div>
+            )}
+            <div className="dl-pager">
+              <span>
+                {dlLoading
+                  ? "Loading…"
+                  : dlQuery
+                    ? `${dlRows.length} match${dlRows.length === 1 ? "" : "es"} for "${dlQuery}" (live search)`
+                    : dlRows.length
+                      ? `Page ${dlPage} · ${(dlPage - 1) * DL_PAGE_SIZE + 1}–${(dlPage - 1) * DL_PAGE_SIZE + dlRows.length} · newest first`
+                      : "No deliveries"}
+              </span>
+              {!dlQuery && (
+                <span style={{ display: "flex", gap: 6 }}>
+                  <button type="button" className="dl-btn dl-btn-ghost dl-btn-sm" disabled={dlPage <= 1 || dlLoading} onClick={() => fetchDlPage(0, [null])}>« Latest</button>
+                  <button type="button" className="dl-btn dl-btn-ghost dl-btn-sm" disabled={dlPage <= 1 || dlLoading} onClick={() => fetchDlPage(dlPage - 2, dlCursors)}>‹ Newer</button>
+                  <button type="button" className="dl-btn dl-btn-ghost dl-btn-sm" disabled={!dlHasMore || dlLoading} onClick={() => fetchDlPage(dlPage, dlCursors)}>Older ›</button>
+                </span>
+              )}
+            </div>
           </div>
+            </>
+          )}
+
+          {mainTab === "payment" && (
+            <>
+          {/* ── Pathao's own invoices (merchant panel) ── */}
+          <PathaoInvoices deliveries={deliveries} onMatch={setInvoiceOf} onAwaiting={setAwaitingReceive} />
+
+            </>
+          )}
         </div>
 
         {/* floating selection bar → master package */}

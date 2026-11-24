@@ -578,7 +578,7 @@ export class Datatable extends Component {
       },
       /* Paicart warehouse: how it will reach the customer — the customer's
          request from To Receive, or set here by staff */
-      ...(this.props.orderStatus == "Paicart-warehouse"
+      ...(["custom-released", "Paicart-warehouse"].includes(this.props.orderStatus)
         ? [
             {
               Header: <b>Delivery request</b>,

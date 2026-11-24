@@ -1,6 +1,8 @@
 import React, { Component } from "react";
 import { MapPin, Plus, Check, AlertTriangle } from "react-feather";
 import { getPathaoAreas, getPathaoCities, getPathaoZones } from "../../constants/pathao";
+import SearchableSelect from "./searchableSelect.jsx";
+import { addressAreaLine } from "../../constants/deliveryRequest";
 
 /* "Deliver to" for the admin delivery request dialog.
  *
@@ -21,8 +23,7 @@ const label = { display: "block", fontSize: 11, fontWeight: 600, color: C.muted,
 const hasPathao = (a) => !!(a && a.pathao && a.pathao.cityId && a.pathao.zoneId);
 const sameAddress = (a, b) =>
   !!a && !!b && ((a.id && b.id && String(a.id) === String(b.id)) || (a.address === b.address && a.mobileNo === b.mobileNo && a.name === b.name));
-const areaLine = (a) =>
-  [a.area, a.thana, a.district].filter(Boolean).filter((v, i, arr) => arr.indexOf(v) === i).join(", ");
+const areaLine = (a) => addressAreaLine(a);
 
 export const buildPathaoAddress = ({ name, mobileNo, address, city, zone, area }) => ({
   id: parseInt(Math.random() * 1000000, 10),
@@ -48,6 +49,8 @@ export const buildPathaoAddress = ({ name, mobileNo, address, city, zone, area }
 
 export default class DeliveryAddressPicker extends Component {
   state = {
+    /* with an address chosen, only it shows until "Change address" */
+    expanded: false,
     adding: false,
     form: { name: "", mobileNo: "", address: "" },
     cities: [],
@@ -108,7 +111,7 @@ export default class DeliveryAddressPicker extends Component {
       area: find(areas, areaId),
     });
     this.props.onChange(address, true);
-    this.setState({ adding: false, error: "" });
+    this.setState({ adding: false, error: "", expanded: false });
   };
 
   renderOption = (a, tag) => {
@@ -119,7 +122,10 @@ export default class DeliveryAddressPicker extends Component {
       <button
         type="button"
         key={`${tag}-${a.id || a.address}`}
-        onClick={() => onChange(a, false)}
+        onClick={() => {
+          onChange(a, false);
+          this.setState({ expanded: false });
+        }}
         style={{
           display: "flex", gap: 10, alignItems: "flex-start", width: "100%", textAlign: "left", cursor: "pointer",
           border: `1px solid ${selected ? "#fdba74" : C.line}`, background: selected ? "#fff8f2" : "#fff",
@@ -149,16 +155,39 @@ export default class DeliveryAddressPicker extends Component {
   };
 
   render() {
-    const { current, book = [] } = this.props;
-    const { adding, form, cities, zones, areas, cityId, zoneId, areaId, loading, error } = this.state;
+    const { current, book = [], value } = this.props;
+    const { adding, form, cities, zones, areas, cityId, zoneId, areaId, loading, error, expanded } = this.state;
     const others = book.filter((a) => !sameAddress(a, current));
+
+    /* an address is already chosen: show just that one + "Change address" */
+    if (value && !expanded && !adding) {
+      return (
+        <div>
+          {this.renderOption(value, sameAddress(value, current) ? "record" : "book")}
+          <button
+            type="button"
+            onClick={() => this.setState({ expanded: true })}
+            style={{ display: "inline-flex", alignItems: "center", gap: 5, border: "1px solid #e2e8f0", background: "#fff", color: "#4b5a70", borderRadius: 9, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+          >
+            <MapPin size={13} /> Change address
+            {(others.length + (current && !sameAddress(current, value) ? 1 : 0)) > 0 && (
+              <span style={{ color: "#94a3b8", fontWeight: 500 }}>
+                · {others.length + (current && !sameAddress(current, value) ? 1 : 0)} saved
+              </span>
+            )}
+          </button>
+        </div>
+      );
+    }
     const select = (value, onChange, list, placeholder, disabled) => (
-      <select value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled} style={{ ...input, padding: "7px 8px" }}>
-        <option value="">{placeholder}</option>
-        {list.map((x) => (
-          <option key={x.id} value={x.id}>{x.name}</option>
-        ))}
-      </select>
+      <SearchableSelect
+        options={list}
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+        placeholder={placeholder}
+        inputStyle={{ ...input, padding: "7px 26px 7px 8px" }}
+      />
     );
     return (
       <div>
@@ -192,15 +221,15 @@ export default class DeliveryAddressPicker extends Component {
               </div>
               <div>
                 <span style={label}>City</span>
-                {select(cityId, this.pickCity, cities, loading === "cities" ? "Loading…" : "Choose city", loading === "cities")}
+                {select(cityId, this.pickCity, cities, loading === "cities" ? "Loading…" : "Search city", loading === "cities")}
               </div>
               <div>
                 <span style={label}>Zone</span>
-                {select(zoneId, this.pickZone, zones, loading === "zones" ? "Loading…" : "Choose zone", !cityId || loading === "zones")}
+                {select(zoneId, this.pickZone, zones, loading === "zones" ? "Loading…" : cityId ? "Search zone" : "Choose city first", !cityId || loading === "zones")}
               </div>
               <div style={{ gridColumn: "1 / -1" }}>
                 <span style={label}>Area (optional)</span>
-                {select(areaId, (v) => this.setState({ areaId: v }), areas, loading === "areas" ? "Loading…" : "Choose area", !zoneId || loading === "areas")}
+                {select(areaId, (v) => this.setState({ areaId: v }), areas, loading === "areas" ? "Loading…" : zoneId ? "Search area" : "Choose zone first", !zoneId || loading === "areas")}
               </div>
               <div style={{ gridColumn: "1 / -1" }}>
                 <span style={label}>Address (house, road, block)</span>

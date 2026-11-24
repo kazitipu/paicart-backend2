@@ -1,4 +1,5 @@
 import firebase from "firebase/app";
+import { allocate, planTotals, idsInMerchantOrderId, CASH_IN_CATEGORY, KIND_LABEL, PATHAO_METHOD } from "../constants/pathaoReceive";
 import { dhakaDayStart, dhakaDayEnd } from "../constants/dateRange";
 import { parseRmb as parseRmbValue } from "../constants/productRequestPayment";
 import { splitReceivedPayment } from "../constants/bulkActions";
@@ -2811,7 +2812,7 @@ export const setWarehouseDeliveryStatus = async (kind, record, status, handledBy
    booked, warehouseStatus "Pathao Booked" (moves to History). */
 export const savePathaoDelivery = async (delivery, items) => {
   const batch = firestore.batch();
-  batch.set(firestore.doc(`pathaoDeliveries/${delivery.id}`), delivery);
+  batch.set(firestore.doc(`pathaoDeliveries/${delivery.id}`), { ...delivery, searchKeys: pathaoSearchKeys(delivery) });
   items.forEach(({ kind, record, bookedCartons, allBooked }) => {
     const id = kind === "order" ? record.orderId : record.bookingId;
     batch.update(firestore.doc(`${DELIVERY_COLLECTIONS[kind]}/${id}`), {
@@ -6387,4 +6388,319 @@ export const addAddressToUserBook = async (userId, address) => {
   const entry = { ...address, defaultShipping: first || !!address.defaultShipping, defaultBilling: first || !!address.defaultBilling };
   await ref.update({ addressBook: [...book, entry] });
   return entry;
+};
+
+/* ── Pathao invoice receive (Delivery → Pathao Payment) ───────────────────
+   pathaoInvoiceReceipts/{invoiceId} marks an invoice as received — written in
+   the same transaction as every payment line and cash-in, so an invoice is
+   received exactly once and all-or-nothing. Rules: constants/pathaoReceive. */
+
+/* { [invoiceId]: receipt } for the given invoice ids */
+export const getPathaoInvoiceReceipts = async (invoiceIds) => {
+  const out = {};
+  await Promise.all(
+    (invoiceIds || []).map(async (id) => {
+      const snap = await firestore.doc(`pathaoInvoiceReceipts/${id}`).get();
+      if (snap.exists) out[id] = snap.data();
+    })
+  );
+  return out;
+};
+
+/* consignment → Paicart record refs ({ kind, id }): our own booking first,
+   else ids found inside Pathao's merchant_order_id */
+const pathaoTargetRefs = async (consignments, getter) => {
+  const refs = {};
+  await Promise.all(
+    consignments.map(async (c) => {
+      const cid = String(c.consignment_id);
+      const booking = await getter(firestore.doc(`pathaoDeliveries/${cid}`));
+      if (booking.exists && Array.isArray(booking.data().items) && booking.data().items.length) {
+        refs[cid] = booking.data().items.map((it) => ({ kind: it.kind, id: String(it.id) }));
+        return;
+      }
+      const found = [];
+      for (const id of idsInMerchantOrderId(c.merchant_order_id)) {
+        for (const kind of ["order", "request", "ship"]) {
+          const snap = await getter(firestore.doc(`${DELIVERY_COLLECTIONS[kind]}/${id}`));
+          if (snap.exists) {
+            found.push({ kind, id });
+            break;
+          }
+        }
+      }
+      refs[cid] = found;
+    })
+  );
+  return refs;
+};
+
+const loadTargets = async (refs, getter) => {
+  const records = {};
+  const keys = new Set();
+  Object.values(refs).forEach((list) => list.forEach((r) => keys.add(`${r.kind}:${r.id}`)));
+  await Promise.all(
+    Array.from(keys).map(async (k) => {
+      const [kind, id] = k.split(":");
+      const snap = await getter(firestore.doc(`${DELIVERY_COLLECTIONS[kind]}/${id}`));
+      if (snap.exists) records[k] = snap.data();
+    })
+  );
+  return (cid) =>
+    (refs[cid] || []).filter((r) => records[`${r.kind}:${r.id}`]).map((r) => ({ kind: r.kind, record: records[`${r.kind}:${r.id}`] }));
+};
+
+/* Preview (no writes) */
+export const previewPathaoInvoiceReceive = async (consignments) => {
+  const get = (ref) => ref.get();
+  const refs = await pathaoTargetRefs(consignments, get);
+  const targetsOf = await loadTargets(refs, get);
+  return allocate(consignments, targetsOf);
+};
+
+/* Receive: one transaction — fails as a whole if anything fails or the
+   invoice was already received. Returns the written plan. */
+export const receivePathaoInvoice = async (invoice, consignments, admin) => {
+  const invoiceId = String(invoice.order_invoice_id);
+  const who = (admin && (admin.name || admin.email)) || "Paicart";
+  /* lookups outside the transaction (queries / existence checks); the
+     records themselves are re-read inside it */
+  const refs = await pathaoTargetRefs(consignments, (ref) => ref.get());
+  const now = new Date();
+  const date = now.toLocaleDateString("en-GB");
+  const month = now.toLocaleString("en-US", { month: "long" });
+  const stamp = now.getTime();
+
+  return firestore.runTransaction(async (t) => {
+    const receiptRef = firestore.doc(`pathaoInvoiceReceipts/${invoiceId}`);
+    const receipt = await t.get(receiptRef);
+    if (receipt.exists) throw new Error(`Pathao invoice ${invoiceId} was already received.`);
+    const targetsOf = await loadTargets(refs, (ref) => t.get(ref));
+    const plan = allocate(consignments, targetsOf);
+
+    /* new payment lines per record */
+    const perRecord = {};
+    const cashIns = [];
+    const expenses = [];
+    plan.forEach((p) => {
+      if (p.charge) {
+        const forWhat = (p.chargeFor || []).map((r) => `${KIND_LABEL[r.kind]} #${r.id}`).join(", ");
+        expenses.push({
+          id: `pathao_${invoiceId}_${p.consignmentId}`,
+          category: "Pathao",
+          subCategory: "Pathao charge",
+          amount: Math.abs(p.payout),
+          note: `Pathao invoice ${invoiceId} · consignment ${p.consignmentId} · charge kept by Pathao${forWhat ? ` · ${forWhat}` : ""}`,
+        });
+        return;
+      }
+      if (p.unmatched) {
+        if (p.payout > 0)
+          cashIns.push({
+            id: `pathao_${invoiceId}_${p.consignmentId}`,
+            category: CASH_IN_CATEGORY.none,
+            subCategory: PATHAO_METHOD,
+            amount: p.payout,
+            note: `Pathao invoice ${invoiceId} · consignment ${p.consignmentId}${p.merchantOrderId ? ` · merchant order ${p.merchantOrderId}` : ""} · no Paicart order`,
+          });
+        return;
+      }
+      p.lines.forEach((l) => {
+        const k = `${l.kind}:${l.id}`;
+        if (!perRecord[k]) perRecord[k] = { kind: l.kind, id: l.id, lines: [], stateAfter: l.stateAfter };
+        perRecord[k].stateAfter = l.stateAfter;
+        const base = { method: PATHAO_METHOD, date, transactionId: p.consignmentId, pathaoInvoiceId: invoiceId };
+        const who3 = l.kind === "ship" ? { paidBy: "Pathao", approvedBy: who } : { receivedBy: who };
+        if (l.apply > 0) {
+          perRecord[k].lines.push({ ...base, ...who3, amount: String(l.apply), note: `Pathao invoice ${invoiceId} · consignment ${p.consignmentId}` });
+          cashIns.push({
+            id: `pathao_${invoiceId}_${p.consignmentId}_${l.kind}_${l.id}`,
+            category: CASH_IN_CATEGORY[l.kind],
+            subCategory: PATHAO_METHOD,
+            amount: l.apply,
+            note: `${KIND_LABEL[l.kind]} #${l.id} · Pathao invoice ${invoiceId} · consignment ${p.consignmentId}`,
+          });
+        }
+        if (l.extra > 0) {
+          perRecord[k].lines.push({ ...base, ...who3, amount: String(l.extra), extra: true, note: `Extra over due · Pathao invoice ${invoiceId} · consignment ${p.consignmentId}` });
+          cashIns.push({
+            id: `pathao_${invoiceId}_${p.consignmentId}_${l.kind}_${l.id}_extra`,
+            category: CASH_IN_CATEGORY[l.kind],
+            subCategory: PATHAO_METHOD,
+            amount: l.extra,
+            note: `Extra over due · ${KIND_LABEL[l.kind]} #${l.id} · Pathao invoice ${invoiceId} · consignment ${p.consignmentId}`,
+          });
+        }
+      });
+    });
+
+    /* reads are done — now every write */
+    for (const r of Object.values(perRecord)) {
+      if (!r.lines.length) continue;
+      const ref = firestore.doc(`${DELIVERY_COLLECTIONS[r.kind]}/${r.id}`);
+      t.update(ref, {
+        payments: firebase.firestore.FieldValue.arrayUnion(...r.lines),
+        paymentStatus: r.stateAfter === "Paid" ? "Paid" : r.stateAfter === "Partially Paid" ? "Partially Paid" : "Not Paid",
+      });
+    }
+    cashIns.forEach((c) =>
+      t.set(firestore.doc(`dailyCashIn/${c.id}`), {
+        ...c,
+        month,
+        date,
+        receiveBy: who,
+        status: "pending",
+        unEditable: true,
+        createdAt: stamp,
+      })
+    );
+    expenses.forEach((e) =>
+      t.set(firestore.doc(`dailyExpenses/${e.id}`), {
+        ...e,
+        month,
+        date,
+        expenseBy: who,
+        status: "pending",
+        unEditable: true,
+        createdAt: stamp,
+      })
+    );
+    const totals = planTotals(plan);
+    t.set(receiptRef, {
+      invoiceId,
+      invoiceDate: invoice.invoice_created_at || "",
+      pathaoStatus: invoice.status || "",
+      receivedAt: stamp,
+      receivedDate: date,
+      receivedBy: who,
+      payout: totals.payout,
+      applied: totals.applied,
+      extra: totals.extra,
+      cashInOnly: totals.cashInOnly,
+      charges: totals.charges,
+      consignments: plan.map((p) => ({
+        consignmentId: p.consignmentId,
+        payout: p.payout,
+        unmatched: !!p.unmatched,
+        charge: !!p.charge,
+        records: p.lines.map((l) => ({ kind: l.kind, id: l.id, apply: l.apply, extra: l.extra, stateAfter: l.stateAfter })),
+      })),
+      cashInIds: cashIns.map((c) => c.id),
+      expenseIds: expenses.map((e) => e.id),
+    });
+    return plan;
+  });
+};
+
+/* ── Pathao deliveries: paged + searched in Firestore ──────────────────────
+   The Pathao Deliveries tab never loads the whole collection:
+     getPathaoDeliveriesPage  newest first, 20 at a time (cursor = last doc)
+     searchPathaoDeliveries   live lookup by searchKeys / Pathao id
+     getPathaoDeliveriesOverview  only open parcels + the last 31 days (KPIs
+                                  and the Pathao status sync)
+   Status filter + createdAt order uses the composite index
+   pathaoDeliveries (parcelStatus ASC, createdAt DESC) — Firestore returns a
+   link to create it the first time. */
+const PATHAO_DELIVERIES = "pathaoDeliveries";
+const PATHAO_OPEN_STATUSES = ["Pathao pickup requested", "Rider Assigned", "Picked parcel From Paicart", "In Transit", "Ready For Delivery"];
+const PATHAO_UNPAID_STATUSES = [...PATHAO_OPEN_STATUSES, "Returned", "Cancelled"];
+
+/* exact-match tokens for search (lower-case) */
+export const pathaoSearchKeys = (d) => {
+  const keys = new Set();
+  const add = (v) => {
+    const s = String(v == null ? "" : v).trim().toLowerCase();
+    if (s) keys.add(s);
+  };
+  add(d.pathaoId || d.id);
+  add(d.merchantOrderId);
+  add(d.bookingId);
+  (d.items || []).forEach((it) => add(it.id));
+  const c = d.customer || {};
+  add(c.userId);
+  add(String(c.userId || "").replace(/^u-/i, ""));
+  add(String(c.phone || "").replace(/\D/g, ""));
+  add(c.name);
+  String(c.name || "")
+    .split(/\s+/)
+    .forEach(add);
+  add(d.shippingMark);
+  return Array.from(keys).slice(0, 40);
+};
+
+const docsToRows = (docs) => docs.map((doc) => ({ ...doc.data(), id: doc.id }));
+
+export const getPathaoDeliveriesPage = async ({ after = null, pageSize = 20, status = "All", payment = "All", sinceMs = null } = {}) => {
+  let q = firestore.collection(PATHAO_DELIVERIES);
+  if (status !== "All") q = q.where("parcelStatus", "==", status);
+  else if (payment === "Paid") q = q.where("parcelStatus", "==", "Delivered");
+  else if (payment === "Unpaid") q = q.where("parcelStatus", "in", PATHAO_UNPAID_STATUSES);
+  if (sinceMs) q = q.where("createdAt", ">=", sinceMs);
+  q = q.orderBy("createdAt", "desc");
+  if (after) q = q.startAfter(after);
+  const snap = await q.limit(pageSize + 1).get();
+  const docs = snap.docs.slice(0, pageSize);
+  return { rows: docsToRows(docs), last: docs[docs.length - 1] || null, hasMore: snap.docs.length > pageSize };
+};
+
+/* live search: the Pathao id itself, then any delivery whose searchKeys
+   holds the term (order / booking id, phone, customer id, a name word,
+   shipping mark) */
+export const searchPathaoDeliveries = async (term) => {
+  const t = String(term || "").trim();
+  if (!t) return [];
+  const found = new Map();
+  const ids = Array.from(new Set([t, t.toUpperCase()]));
+  await Promise.all(
+    ids.map(async (id) => {
+      if (id.includes("/")) return;
+      const snap = await firestore.doc(`${PATHAO_DELIVERIES}/${id}`).get();
+      if (snap.exists) found.set(snap.id, { ...snap.data(), id: snap.id });
+    })
+  );
+  const tokens = Array.from(new Set([t.toLowerCase(), t.replace(/\D/g, ""), t.toLowerCase().replace(/^u-/, "")].filter((x) => x && x.length >= 2)));
+  await Promise.all(
+    tokens.map(async (tok) => {
+      const snap = await firestore.collection(PATHAO_DELIVERIES).where("searchKeys", "array-contains", tok).limit(50).get();
+      snap.forEach((doc) => found.set(doc.id, { ...doc.data(), id: doc.id }));
+    })
+  );
+  return Array.from(found.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+};
+
+/* open parcels + the last 31 days — enough for the KPI tiles and for
+   polling Pathao for status changes */
+export const getPathaoDeliveriesOverview = async () => {
+  const since = Date.now() - 31 * 24 * 60 * 60 * 1000;
+  const [open, recent] = await Promise.all([
+    firestore.collection(PATHAO_DELIVERIES).where("parcelStatus", "in", PATHAO_OPEN_STATUSES).get(),
+    firestore.collection(PATHAO_DELIVERIES).where("createdAt", ">=", since).get(),
+  ]);
+  const map = new Map();
+  [...open.docs, ...recent.docs].forEach((doc) => map.set(doc.id, { ...doc.data(), id: doc.id }));
+  return Array.from(map.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+};
+
+/* one-time: add searchKeys to deliveries saved before search existed */
+export const ensurePathaoSearchKeys = async () => {
+  const flag = firestore.doc("meta/pathaoDeliveriesSearchKeys");
+  const f = await flag.get();
+  if (f.exists && f.data().version >= 1) return 0;
+  const snap = await firestore.collection(PATHAO_DELIVERIES).get();
+  let n = 0;
+  let batch = firestore.batch();
+  let ops = 0;
+  for (const doc of snap.docs) {
+    batch.update(doc.ref, { searchKeys: pathaoSearchKeys({ ...doc.data(), id: doc.id }) });
+    n += 1;
+    ops += 1;
+    if (ops >= 400) {
+      await batch.commit();
+      batch = firestore.batch();
+      ops = 0;
+    }
+  }
+  if (ops) await batch.commit();
+  await flag.set({ version: 1, updatedAt: Date.now(), count: n });
+  return n;
 };

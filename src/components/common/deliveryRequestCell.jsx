@@ -6,6 +6,8 @@ import { Badge, Button, TONES } from "./listUi";
 import "./modalAnim.css";
 import { showDialog } from "./appDialog.jsx";
 import { AddressCard } from "./addressAndChips.jsx";
+import { Link } from "react-router-dom";
+import { isInDeliverySection } from "../../constants/deliveryPanel";
 import { addAddressToUserBook, getSingleUser, saveDeliveryRequest, sendInAppNotifications, updateParcelRecordFields } from "../../firebase/firebase.utils";
 import {
   DELIVERY_METHODS,
@@ -261,6 +263,18 @@ export default class DeliveryRequestCell extends Component {
             <Badge tone={(m && m.tone) || "gray"} style={{ fontSize: 11 }}>{request.label || request.method}</Badge>{" "}
             <Badge tone={st.tone} style={{ fontSize: 10, padding: "1px 7px" }}>{st.label}</Badge>
             <SourceLine request={request} />
+            {isInDeliverySection(effective) ? (
+              <Link
+                to={`${process.env.PUBLIC_URL}/delivery?type=${encodeURIComponent(request.method)}&focus=${kind}-${recordIdOf(kind, record)}`}
+                style={{ display: "inline-flex", alignItems: "center", gap: 3, marginTop: 4, fontSize: 11, fontWeight: 600, color: "#2f8a5b" }}
+              >
+                ✓ In Delivery section ↗
+              </Link>
+            ) : (
+              request.status === "requested" && (
+                <div style={{ marginTop: 4, fontSize: 10.5, color: "#a66a14" }}>Set to Arranged to send it to the Delivery section</div>
+              )
+            )}
           </div>
         ) : (
           <span style={{ fontSize: 12, color: "#94a3b8", fontWeight: 600 }}>None</span>

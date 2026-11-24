@@ -5,7 +5,7 @@
  * scheduled Cloud Function does the same when nobody has the admin open. */
 import Axios from "axios";
 import { toast } from "react-toastify";
-import { algStatusPatch, orderTrackingNumbers, ALG_KINDS } from "../../constants/algOrderStatus";
+import { algStatusPatch, orderTrackingNumbers, ALG_KINDS, isAlgEligible } from "../../constants/algOrderStatus";
 
 const THROTTLE_MS = 30 * 60 * 1000;
 const LABEL = { "Bangladesh warehouse": "Custom released" };
@@ -35,6 +35,7 @@ export const syncStatusesFromAlg = async (records, kind, save) => {
     const status = r[cfg.field] || (kind === "ship" ? "Pending" : "");
     return (
       cfg.from.includes(status) &&
+      isAlgEligible(r, kind) &&
       orderTrackingNumbers(r).length > 0 &&
       !(seen[idOf(r)] && now - seen[idOf(r)] < THROTTLE_MS)
     );
