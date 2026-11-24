@@ -1,13 +1,14 @@
 /* Moves website orders, product requests and Ship For Me bookings forward
  * from ALG's lot tracking when an admin list loads (rule: algStatusPatch in
  * constants/algOrderStatus.js). Each record is looked up at most once per
- * 30 minutes per browser tab; only the status fields are written. A
+ * 5 minutes per browser tab (30 was too long: a carton that reached the
+ * local warehouse stayed in Approved until the tab's window ran out); only the status fields are written. A
  * scheduled Cloud Function does the same when nobody has the admin open. */
 import Axios from "axios";
 import { toast } from "react-toastify";
 import { algStatusPatch, orderTrackingNumbers, ALG_KINDS, isAlgEligible } from "../../constants/algOrderStatus";
 
-const THROTTLE_MS = 30 * 60 * 1000;
+const THROTTLE_MS = 5 * 60 * 1000;
 const LABEL = { "Bangladesh warehouse": "Custom released" };
 const running = {};
 
