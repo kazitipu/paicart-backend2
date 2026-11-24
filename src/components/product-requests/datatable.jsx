@@ -18,7 +18,8 @@ import {
   isInBatch,
   isBatchable,
   sumRmb,
-  requiresBatch,
+  requiresPurchaseInfo,
+  missingPurchaseInfo,
 } from "../../constants/productRequestPayment";
 import {
   BulkActionBar,
@@ -134,8 +135,10 @@ export class Datatable extends Component {
     const request = item.raw;
     if (status === "Reject") return null;
     if (!request.orderTotal) return "No order total given";
-    if (requiresBatch(status) && !isInBatch(request))
-      return "Not in a payment batch yet";
+    if (requiresPurchaseInfo(status) && status !== request.orderStatus) {
+      const missing = missingPurchaseInfo(request);
+      if (missing.length) return `Enter ${missing.join(" and ")} first`;
+    }
     return null;
   };
 

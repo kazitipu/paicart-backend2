@@ -10,8 +10,8 @@ import {
 } from "../../firebase/firebase.utils";
 import { sendNotifications } from "../../firebase/fcmRestApi";
 import {
-  isInBatch,
-  requiresBatch,
+  missingPurchaseInfo,
+  requiresPurchaseInfo,
 } from "../../constants/productRequestPayment";
 import { statusDisplay } from "../../constants/statusDisplay";
 import CartonManager from "../common/cartons/CartonManager";
@@ -110,24 +110,24 @@ class UpdateRequestModal extends Component {
       alert("You must give order total.");
       return;
     }
-    /* The purchase batch IS the purchase, so a request cannot be advanced past
-       Rates Provided until it belongs to one.
+    /* Purchased (and later) needs the purchase details entered right here —
+       Purchasing RMB and the exchange rate. A payment batch is not needed.
        The `!== order.orderStatus` test is essential: componentWillReceiveProps
        seeds state.orderStatus from the order and handleSubmit spreads
        ...this.state, so every save on an already-Purchased request re-submits
        its current status. Without it, every request purchased before this
        feature shipped would become permanently un-editable. */
     const nextStatus = this.state.orderStatus;
+    const missing = missingPurchaseInfo(this.state);
     if (
       nextStatus &&
       nextStatus !== order.orderStatus &&
-      requiresBatch(nextStatus) &&
-      !isInBatch(order)
+      requiresPurchaseInfo(nextStatus) &&
+      missing.length
     ) {
       alert(
-        `This request is not in a payment batch yet. Select it on the New or ` +
-          `Rates Provided list and create a payment batch before marking it ` +
-          `\u201c${nextStatus}\u201d.`
+        `Enter ${missing.join(" and ")} in Purchase (China) before marking this ` +
+          `request \u201c${nextStatus}\u201d.`
       );
       return;
     }
@@ -347,9 +347,12 @@ class UpdateRequestModal extends Component {
   render() {
     if (this.props.toggleModal) return null;
     const order = this.props.order || {};
-    /* Locked until the request is in a purchase batch. */
-    const locked = !isInBatch(order);
-    const lockNote = locked ? " — needs payment batch" : "";
+    /* Purchased and later need the purchase details filled in below. */
+    const missingPurchase = missingPurchaseInfo(this.state);
+    const needsPurchase =
+      requiresPurchaseInfo(this.state.orderStatus) &&
+      this.state.orderStatus !== order.orderStatus &&
+      missingPurchase.length > 0;
     const total = this.customerTotal();
     const cargoTotal = (this.state.cartons || []).length
       ? cartonTotals(this.state.cartons).cargoCharge
@@ -396,16 +399,20 @@ class UpdateRequestModal extends Component {
                     <option value="">Change status</option>
                     <option value="Pending">Pending</option>
                     <option value="Rates Provided">Rates Provided</option>
-                    <option value="Purchased" disabled={locked}>Purchased{lockNote}</option>
-                    <option value="Received in Warehouse" disabled={locked}>Received in Warehouse{lockNote}</option>
-                    <option value="Ready for fly" disabled={locked}>Ready for fly{lockNote}</option>
-                    <option value="Bangladesh customs" disabled={locked}>Bangladesh customs{lockNote}</option>
-                    <option value="Bangladesh warehouse" disabled={locked}>Custom released{lockNote}</option>
-                    <option value="Paicart warehouse" disabled={locked}>Paicart warehouse{lockNote}</option>
-                    <option value="Delivered" disabled={locked}>Delivered{lockNote}</option>
+                    <option value="Purchased">Purchased</option>
+                    <option value="Received in Warehouse">Received in Warehouse</option>
+                    <option value="Ready for fly">Ready for fly</option>
+                    <option value="Bangladesh customs">Bangladesh customs</option>
+                    <option value="Bangladesh warehouse">Custom released</option>
+                    <option value="Paicart warehouse">Paicart warehouse</option>
+                    <option value="Delivered">Delivered</option>
                     <option value="Reject">Reject</option>
                   </select>
-                  {locked && <span className="urm-hint urm-hint-warn">Not in a payment batch — status can go no further than Rates Provided.</span>}
+                  {needsPurchase && (
+                    <span className="urm-hint urm-hint-warn">
+                      Enter {missingPurchase.join(" and ")} in Purchase (China) to mark it {statusDisplay(this.state.orderStatus)}.
+                    </span>
+                  )}
                 </label>
                 {this.field("Order number (china website)", "orderNumber", { placeholder: "1688 / taobao / aliexpress order number" })}
               </div>

@@ -47,3 +47,17 @@ export const STATUSES_ALLOWED_WITHOUT_BATCH = [
 
 export const requiresBatch = (status) =>
   !STATUSES_ALLOWED_WITHOUT_BATCH.includes(status);
+
+/* ── Purchased needs the purchase details, not a batch ──
+ * A request can move to Purchased (and anything after it) once the admin has
+ * entered what it cost in the update modal: Purchasing RMB and the exchange
+ * rate. A payment batch is optional bookkeeping and no longer gates status.
+ * `values` is whatever is about to be saved (the modal's fields, or the
+ * stored request for a bulk change) → labels of the missing fields. */
+export const PURCHASE_REQUIRED_FIELDS = [
+  { key: "purchasingRmb", label: "Purchasing RMB" },
+  { key: "exchangeRate", label: "Exchange rate" },
+];
+export const missingPurchaseInfo = (values) =>
+  PURCHASE_REQUIRED_FIELDS.filter((f) => parseRmb(values && values[f.key]) <= 0).map((f) => f.label);
+export const requiresPurchaseInfo = (status) => requiresBatch(status);
